@@ -1,0 +1,6 @@
+ceic_api_client
+pandas>=2.3.0
+numpy
+statsmodels
+plotly
+streamlit
