@@ -24,6 +24,7 @@ from indicator_catalog import TARGET_CATALOG
 from forecast_orchestrator import run_forecast
 from steel_pipeline import plot_price_fan_chart
 from theme import apply_custom_theme, render_badge, render_metric_card, render_hero_metric
+from translation import t, selector_idioma
 
 st.set_page_config(page_title="ISI | Proyección de indicadores", layout="wide")
 apply_custom_theme()
@@ -86,6 +87,23 @@ def run_forecast_cacheado(_ceic, target_key, start_date, usar_extras):
 # ======================================================================
 # Helpers de presentación
 # ======================================================================
+def etiqueta_periodo(period_label, plural=False, capitalizar=False):
+    """
+    Traduce el nombre del período (trimestre/semana/mes/...) al idioma
+    activo, con la pluralización correcta — "mes" en portugués es "mês",
+    y su plural es "meses", no "mêss" (una simple concatenación con "s"
+    rompería justo ese caso).
+    """
+    idioma = st.session_state.get("idioma", "es")
+    if idioma == "pt":
+        singular = {"mes": "mês", "trimestre": "trimestre", "semana": "semana",
+                    "período": "período", "periodo": "período"}.get(period_label, period_label)
+        texto = ("meses" if singular == "mês" else f"{singular}s") if plural else singular
+    else:
+        texto = f"{period_label}s" if plural else period_label
+    return texto.capitalize() if capitalizar else texto
+
+
 def etiqueta_horizonte(h, period_label):
     """
     Traduce un horizonte a la unidad en la que piensa el negocio.
@@ -94,6 +112,18 @@ def etiqueta_horizonte(h, period_label):
     las 6 series conviven honestamente, pero nadie pregunta "¿cómo va el
     acero en 22 semanas?". Se muestra en meses.
     """
+    if st.session_state.get("idioma", "es") == "pt":
+        if period_label == "semana":
+            meses = h / SEMANAS_POR_MES
+            n = int(round(meses))
+            return f"{n} mês" if n == 1 else f"{n} meses"
+        if period_label == "trimestre":
+            return "1 trimestre" if h == 1 else f"{h} trimestres"
+        unidad = {"mes": "mês", "período": "período", "periodo": "período"}.get(period_label, period_label)
+        if unidad == "mês":
+            return "1 mês" if h == 1 else f"{h} meses"
+        return f"{h} {unidad}s" if h != 1 else f"1 {unidad}"
+
     if period_label == "semana":
         meses = h / SEMANAS_POR_MES
         n = int(round(meses))
@@ -106,6 +136,12 @@ def etiqueta_horizonte(h, period_label):
 
 def etiqueta_benchmark(benchmark, period_label):
     """Cómo se le explica al cliente contra qué se está comparando."""
+    if st.session_state.get("idioma", "es") == "pt":
+        if benchmark == "zero":
+            return "o preço fica igual"
+        unidad = {"mes": "mês", "trimestre": "trimestre", "semana": "semana",
+                  "período": "período", "periodo": "período"}.get(period_label, period_label)
+        return f"repetir o dado do {unidad} atual"
     if benchmark == "zero":
         return "el precio se queda igual"
     return f"repetir el dato del {period_label} actual"
@@ -114,11 +150,18 @@ def tabla_extraccion_legible(df):
     """Renombra la tabla de extracción a columnas que se le muestran al cliente."""
     if df is None or df.empty:
         return df
-    cols = {
-        "serie": "Serie", "id_ceic": "ID en CEIC", "n_obs": "Observaciones",
-        "desde": "Desde", "hasta": "Hasta", "frecuencia_real": "Frecuencia real",
-        "ultimo_valor": "Último dato",
-    }
+    if st.session_state.get("idioma", "es") == "pt":
+        cols = {
+            "serie": "Série", "id_ceic": "ID no CEIC", "n_obs": "Observações",
+            "desde": "Desde", "hasta": "Até", "frecuencia_real": "Frequência real",
+            "ultimo_valor": "Último dado",
+        }
+    else:
+        cols = {
+            "serie": "Serie", "id_ceic": "ID en CEIC", "n_obs": "Observaciones",
+            "desde": "Desde", "hasta": "Hasta", "frecuencia_real": "Frecuencia real",
+            "ultimo_valor": "Último dato",
+        }
     presentes = [c for c in cols if c in df.columns]
     return df[presentes].rename(columns=cols)
 
@@ -150,17 +193,12 @@ def render_extraccion(result, period_label):
     if tabla is None or tabla.empty:
         return
 
-    st.markdown("### ¿De dónde salen estos datos?")
-    st.caption(
-        "Cada serie se descarga en vivo desde la API de CEIC al momento de "
-        "correr la proyección. La frecuencia es la que se observa en los "
-        "datos, no la etiqueta del catálogo — varias series marcadas como "
-        "diarias en realidad se publican cada 10 días."
-    )
+    st.markdown(t("de_donde_salen_datos"))
+    st.caption(t("caption_extraccion_serie"))
     st.dataframe(tabla_extraccion_legible(tabla), use_container_width=True, hide_index=True)
 
     dataset = result["dataset"]
-    st.markdown(f"**Datos más recientes** (últimos {min(8, len(dataset))} períodos del modelo):")
+    st.markdown(t("datos_recientes", n=min(8, len(dataset))))
     recientes = dataset.tail(8).iloc[::-1].copy()
     if "date" in recientes.columns:
         recientes["date"] = pd.to_datetime(recientes["date"]).dt.date
@@ -171,13 +209,18 @@ def render_extraccion(result, period_label):
 # Login
 # ======================================================================
 def initialize_session_state():
-    for key, value in {"logged_in": False, "result": None, "result_key": None}.items():
+    for key, value in {"logged_in": False, "result": None, "result_key": None,
+                        "idioma": "es"}.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
 def login_page():
-    _, col2, _ = st.columns([2, 1, 2])
+    top_left, top_right = st.columns([5, 1])
+    with top_right:
+        selector_idioma(key_sufijo="login")
+
+    _, col2, _ = st.columns([1, 2, 1])
     with col2:
         # Se embebe como <img> con una clase propia (mismo patrón que el
         # título y el subtítulo de abajo) en vez de usar st.image(): la
@@ -193,25 +236,23 @@ def login_page():
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<h2 class='isi-login-title'>Proyección de indicadores económicos</h2>",
+            f"<h2 class='isi-login-title'>{t('app_title')}</h2>",
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<p class='isi-login-subtitle'>Anticipa el resultado de indicadores clave "
-            "antes de que se publique el dato oficial, con datos que ISI | CEIC "
-            "actualiza todos los días</p>",
+            f"<p class='isi-login-subtitle'>{t('app_subtitle')}</p>",
             unsafe_allow_html=True,
         )
 
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
-            username = st.text_input("Usuario")
-            password = st.text_input("Contraseña", type="password")
-            submitted = st.form_submit_button("Ingresar", use_container_width=True, type="primary")
+            username = st.text_input(t("usuario"))
+            password = st.text_input(t("contrasena"), type="password")
+            submitted = st.form_submit_button(t("ingresar"), use_container_width=True, type="primary")
             if submitted:
                 try:
-                    with st.spinner("Autenticando..."):
+                    with st.spinner(t("autenticando")):
                         print(f"[Login] Autenticando usuario '{username}' contra la API de CEIC...")
                         Ceic.login(username, password)
                         print("[Login] Sesión iniciada correctamente.")
@@ -219,7 +260,7 @@ def login_page():
                         st.rerun()
                 except Exception as e:
                     print(f"[Login] Error al autenticar: {e}")
-                    st.error(f"Error al iniciar sesión: {e}")
+                    st.error(t("error_login", error=e))
 
 
 
@@ -238,9 +279,7 @@ def render_nowcast_result(result, target_config):
     tabla = result["tabla_precision"]
 
     if not cal["hay_ventaja"] or est is None:
-        st.error(
-            f"**Sin ventaja de calendario en este momento.** {cal['mensaje']}"
-        )
+        st.error(t("sin_ventaja_calendario", mensaje=cal['mensaje']))
     else:
         hero_col, tabla_col = st.columns([1, 2.2])
         with hero_col:
@@ -248,34 +287,26 @@ def render_nowcast_result(result, target_config):
                 label=f"{result['label_objetivo']} — {cal['trimestre_objetivo']}",
                 value=f"{est['nowcast']:.1f}%",
                 icon="",
-                caption=(
-                    f"Estimado con {est['meses_usados']} mes(es) de datos "
-                    f"&nbsp;·&nbsp; el dato oficial aún no se publica"
-                ),
+                caption=t("estimado_con_meses", n=est['meses_usados']),
             )
-            render_metric_card("Error típico de esta estimación",
+            render_metric_card(t("error_tipico_estimacion"),
                                 f"±{est['error_tipico']:.2f} pp")
             st.caption(
-                f"Último dato oficial publicado: {est['ultimo_pib']:.1f}% "
-                f"({est['trimestre_ultimo_pib']}). Este número lo anticipa."
+                t("ultimo_dato_oficial", valor=f"{est['ultimo_pib']:.1f}",
+                  trimestre=est['trimestre_ultimo_pib'])
             )
         with tabla_col:
-            st.markdown("#### Cuánto sabemos, y cuándo")
-            st.caption(
-                "El error baja a medida que salen más meses del trimestre. "
-                "Todo medido con validación histórica: en cada trimestre se "
-                "reentrena solo con datos anteriores y se compara contra lo "
-                "que realmente dio."
-            )
+            st.markdown(t("cuanto_sabemos"))
+            st.caption(t("caption_error_baja"))
             vista = tabla.copy()
-            vista["Meses publicados"] = vista["meses_de_indicador"].astype(int)
-            vista["Error típico"] = vista["rmse"].map(lambda v: f"±{v:.2f} pp")
-            vista["Error sin 2020"] = vista["rmse_sin_covid"].map(lambda v: f"±{v:.2f} pp")
-            vista["Mejor que esperar"] = vista["mejora_%"].map(lambda v: f"{v:.0f}%")
-            vista["Trimestres probados"] = vista["n_trimestres"]
+            vista[t("col_meses_publicados")] = vista["meses_de_indicador"].astype(int)
+            vista[t("col_error_tipico")] = vista["rmse"].map(lambda v: f"±{v:.2f} pp")
+            vista[t("col_error_sin_2020")] = vista["rmse_sin_covid"].map(lambda v: f"±{v:.2f} pp")
+            vista[t("col_mejor_que_esperar")] = vista["mejora_%"].map(lambda v: f"{v:.0f}%")
+            vista[t("col_trimestres_probados")] = vista["n_trimestres"]
             st.dataframe(
-                vista[["Meses publicados", "Error típico", "Error sin 2020",
-                       "Mejor que esperar", "Trimestres probados"]],
+                vista[[t("col_meses_publicados"), t("col_error_tipico"), t("col_error_sin_2020"),
+                       t("col_mejor_que_esperar"), t("col_trimestres_probados")]],
                 use_container_width=True, hide_index=True,
             )
             st.caption(cal["mensaje"])
@@ -283,11 +314,13 @@ def render_nowcast_result(result, target_config):
     st.markdown("---")
 
     # ------------------------------------------------------------------
-    st.markdown("### Real contra estimado, trimestre a trimestre")
+    st.markdown(t("real_vs_estimado"))
     meses_sel = st.selectbox(
-        "Con cuántos meses del trimestre:", sorted(result["detalles"].keys()),
+        t("con_cuantos_meses"), sorted(result["detalles"].keys()),
         index=len(result["detalles"]) - 1,
-        format_func=lambda m: f"{m} mes" if m == 1 else f"{m} meses",
+        format_func=lambda m: (f"{m} mês" if m == 1 else f"{m} meses")
+                     if st.session_state.get("idioma", "es") == "pt"
+                     else (f"{m} mes" if m == 1 else f"{m} meses"),
         key="nowcast_m",
     )
     detalle = result["detalles"][meses_sel]
@@ -297,23 +330,20 @@ def render_nowcast_result(result, target_config):
     ultimos["error"] = (ultimos["real"] - ultimos["nowcast"]).round(2)
     st.dataframe(
         ultimos[["trimestre", "real", "nowcast", "error", "ultimo_pib_publicado"]].rename(columns={
-            "trimestre": "Trimestre", "real": "Dato oficial (%)",
-            "nowcast": "Estimado (%)", "error": "Diferencia (pp)",
-            "ultimo_pib_publicado": "Lo que se sabía antes (%)",
+            "trimestre": t("col_trimestre"), "real": t("col_dato_oficial_pct"),
+            "nowcast": t("col_estimado_pct"), "error": t("col_diferencia_pp"),
+            "ultimo_pib_publicado": t("col_lo_que_se_sabia"),
         }).round(2),
         use_container_width=True, hide_index=True,
     )
 
     st.markdown("---")
-    st.markdown("### ¿De dónde salen estos datos?")
-    st.caption(
-        "Las dos series se descargan en vivo desde la API de CEIC. La "
-        "frecuencia es la observada en los datos, no la etiqueta del catálogo."
-    )
+    st.markdown(t("de_donde_salen_datos"))
+    st.caption(t("caption_dos_series_vivo"))
     st.dataframe(tabla_extraccion_legible(result["tabla_extraccion"]),
                  use_container_width=True, hide_index=True)
 
-    with st.expander("Ver el detalle estadístico completo"):
+    with st.expander(t("ver_detalle_estadistico")):
         st.markdown("**Precisión y significancia por corte:**")
         det = tabla.copy()
         det["p_value"] = formatear_p(det["p_value"])
@@ -390,31 +420,25 @@ def render_macro_result(result, target_config):
     hero_col, chart_col = st.columns([1, 2.2])
     with hero_col:
         render_hero_metric(
-            label=f"Crecimiento esperado — {target_label}",
+            label=t("crecimiento_esperado", target=target_label),
             value=f"{primero['forecast']:.1f}%",
             icon="",
-            caption=(
-                f"Rango: {primero['ci_95_lower']:.1f}% a {primero['ci_95_upper']:.1f}%"
-                f" &nbsp;·&nbsp; próximo {period_label}"
-            ),
+            caption=t("rango_proximo", lo=f"{primero['ci_95_lower']:.1f}",
+                      hi=f"{primero['ci_95_upper']:.1f}", periodo=etiqueta_periodo(period_label)),
         )
         render_metric_card(
-            f"A {etiqueta_horizonte(int(ultimo['horizon']), period_label)}",
+            t("a_horizonte", h=etiqueta_horizonte(int(ultimo['horizon']), period_label)),
             f"{ultimo['forecast']:.1f}%",
         )
         st.caption(
-            f"Basado en **{result['chosen_indicator']}**, el indicador de mayor "
-            f"frecuencia con la relación más fuerte con {target_label.lower()}."
+            t("basado_en_indicador", indicador=result['chosen_indicator'],
+              target=target_label.lower())
         )
     with chart_col:
         st.plotly_chart(model.plot_fan_chart(dataset, history_periods=40),
                         use_container_width=True)
 
-    st.caption(
-        "La banda se ensancha con el horizonte porque la certeza baja "
-        "mientras más lejos se proyecta — el mismo formato que usan los "
-        "bancos centrales."
-    )
+    st.caption(t("caption_banda_ensancha"))
 
     # Un R² ajustado <= 0 significa que el modelo no le aporta nada al
     # promedio histórico. Mostrar ese horizonte como "pronóstico" sin
@@ -424,12 +448,7 @@ def render_macro_result(result, target_config):
         etiquetas_sin = ", ".join(
             etiqueta_horizonte(int(h), period_label) for h in sin_poder["horizon"]
         )
-        st.warning(
-            f"**A {etiquetas_sin} el modelo no aporta información sobre el "
-            f"promedio histórico** (R² ajustado ≈ 0 o negativo). Esos puntos "
-            "sirven para mostrar cómo crece la incertidumbre, pero no deben "
-            "presentarse como pronóstico."
-        )
+        st.warning(t("warning_sin_poder", horizontes=etiquetas_sin))
 
     st.markdown("---")
     render_extraccion(result, period_label)
@@ -437,27 +456,24 @@ def render_macro_result(result, target_config):
     # ------------------------------------------------------------------
     st.markdown("---")
     bench_txt = etiqueta_benchmark(bt["benchmark"].iloc[0], period_label)
-    st.markdown("### ¿Qué tan bien predice el modelo?")
+    st.markdown(t("que_tan_bien_predice"))
     st.caption(
-        f"En cada {period_label} histórico se reentrena el modelo usando "
-        "solo resultados que ya se conocían en ese momento, y se proyecta "
-        f"hacia adelante sin ver el dato real. El rival es **{bench_txt}**: "
-        "para una tasa de crecimiento, ese es el punto de comparación "
-        "honesto — nadie proyecta que la economía crecerá 0%."
+        t("caption_reentrena_periodo", periodo=etiqueta_periodo(period_label), rival=bench_txt)
     )
 
     tabla_bt = bt.copy()
     tabla_bt["horizonte"] = tabla_bt["horizon"].apply(
         lambda h: etiqueta_horizonte(int(h), period_label)
     )
-    tabla_bt["¿Le gana?"] = tabla_bt["le_gana_al_benchmark"].map({True: "Sí", False: "No"})
+    tabla_bt[t("le_gana")] = tabla_bt["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
     st.dataframe(
         tabla_bt[["horizonte", "n_folds", "rmse_model", "rmse_benchmark",
-                  "mejora_vs_benchmark_%", "¿Le gana?"]].rename(columns={
-            "horizonte": "Horizonte", "n_folds": f"{period_label.capitalize()}s probados",
-            "rmse_model": "Error del modelo (RMSE)",
-            "rmse_benchmark": f"Error de {bench_txt}",
-            "mejora_vs_benchmark_%": "Mejora (%)",
+                  "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
+            "horizonte": t("col_horizonte"),
+            "n_folds": t("col_periodos_probados", periodo=etiqueta_periodo(period_label, plural=True, capitalizar=True)),
+            "rmse_model": t("col_error_modelo_rmse"),
+            "rmse_benchmark": t("col_error_de", rival=bench_txt),
+            "mejora_vs_benchmark_%": t("col_mejora_pct"),
         }),
         use_container_width=True, hide_index=True,
     )
@@ -465,7 +481,7 @@ def render_macro_result(result, target_config):
     horizontes = sorted(result["backtest_detail"].keys())
     if horizontes:
         h_sel = st.selectbox(
-            "Ver el detalle período a período del horizonte:", horizontes,
+            t("ver_detalle_periodo"), horizontes,
             format_func=lambda h: etiqueta_horizonte(int(h), period_label),
             key="macro_h",
         )
@@ -474,18 +490,22 @@ def render_macro_result(result, target_config):
 
     e1, e2, e3 = st.columns(3)
     with e1:
-        render_metric_card("Qué tanto explica el modelo", f"{primero['r_squared_adj']:.1%}")
-        st.caption(f"Del comportamiento de {target_label.lower()} al próximo {period_label}")
+        render_metric_card(t("qué_tanto_explica"), f"{primero['r_squared_adj']:.1%}")
+        st.caption(t("caption_comportamiento_proximo", target=target_label.lower(),
+                     periodo=etiqueta_periodo(period_label)))
     with e2:
         mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
-        render_metric_card("Mejora vs. no usar el modelo", f"{mejor['mejora_vs_benchmark_%']:.0f}%")
-        st.caption(f"En el horizonte de {etiqueta_horizonte(int(mejor['horizon']), period_label)}")
+        render_metric_card(t("mejora_vs_no_usar"), f"{mejor['mejora_vs_benchmark_%']:.0f}%")
+        st.caption(t("caption_en_horizonte", h=etiqueta_horizonte(int(mejor['horizon']), period_label)))
     with e3:
-        render_metric_card(f"{period_label.capitalize()}s de historia", f"{len(dataset)}")
-        st.caption(f"Desde {pd.to_datetime(dataset['date']).min():%Y}")
+        render_metric_card(
+            t("periodos_de_historia", periodo=etiqueta_periodo(period_label, plural=True, capitalizar=True)),
+            f"{len(dataset)}",
+        )
+        st.caption(t("caption_desde_anio", anio=f"{pd.to_datetime(dataset['date']).min():%Y}"))
 
     # ------------------------------------------------------------------
-    with st.expander("Ver el detalle estadístico completo"):
+    with st.expander(t("ver_detalle_estadistico")):
         st.markdown(
             f"**Elección del indicador principal.** Se probaron "
             f"{len(result['candidates_tried'])} candidatos y se comparó qué tan "
@@ -646,29 +666,26 @@ def render_commodity_result(result, target_config):
     hero_col, chart_col = st.columns([1, 2.2])
     with hero_col:
         render_hero_metric(
-            label=f"Precio esperado en {horizonte_txt}",
+            label=t("precio_esperado_en", horizonte=horizonte_txt),
             value=f"{last_h['precio']:,.0f}",
             icon="",
-            caption=(
-                f"Rango: {last_h['precio_lower']:,.0f} a {last_h['precio_upper']:,.0f}"
-                f" &nbsp;·&nbsp; hoy: {result['last_price']:,.0f}"
-            ),
+            caption=t("rango_hoy", lo=f"{last_h['precio_lower']:,.0f}",
+                      hi=f"{last_h['precio_upper']:,.0f}", hoy=f"{result['last_price']:,.0f}"),
         )
-        render_metric_card("Variación proyectada", f"{var_pct:+.1f}%")
+        render_metric_card(t("variacion_proyectada"), f"{var_pct:+.1f}%")
         st.caption(
-            f"Último dato disponible: {result['last_date']:%d-%b-%Y}. "
-            "Datos diarios y decadales de China Premium, alineados a semana."
+            t("caption_ultimo_dato_acero", fecha=f"{result['last_date']:%d-%b-%Y}")
         )
     with chart_col:
         st.plotly_chart(plot_price_fan_chart(result), use_container_width=True)
 
-    st.markdown("**Precio proyectado por horizonte:**")
+    st.markdown(t("precio_proyectado_horizonte"))
     pp = price_path.copy()
-    pp["Horizonte"] = pp["horizon"].apply(lambda h: etiqueta_horizonte(int(h), period_label))
+    pp[t("col_horizonte")] = pp["horizon"].apply(lambda h: etiqueta_horizonte(int(h), period_label))
     st.dataframe(
-        pp[["Horizonte", "precio", "precio_lower", "precio_upper"]].rename(columns={
-            "precio": "Precio esperado", "precio_lower": "Mínimo (95%)",
-            "precio_upper": "Máximo (95%)",
+        pp[[t("col_horizonte"), "precio", "precio_lower", "precio_upper"]].rename(columns={
+            "precio": t("col_precio_esperado"), "precio_lower": t("col_minimo_95"),
+            "precio_upper": t("col_maximo_95"),
         }).round(0),
         use_container_width=True, hide_index=True,
     )
@@ -678,43 +695,29 @@ def render_commodity_result(result, target_config):
 
     # ------------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### ¿Qué tan bien predice el modelo?")
-    st.caption(
-        "En cada semana histórica se reentrena el modelo usando solo "
-        "resultados que ya se conocían en ese momento. El punto de "
-        "comparación duro para un precio es suponer que se queda igual: "
-        "si el modelo no le gana a eso, no aporta."
-    )
+    st.markdown(t("que_tan_bien_predice"))
+    st.caption(t("caption_reentrena_semana"))
 
     if not bt["le_gana_al_benchmark"].any():
-        st.warning(
-            "En este momento el modelo **no** le gana al supuesto de "
-            "'el precio se queda igual' en ningún horizonte. Conviene "
-            "revisar los independientes o acortar el horizonte antes de "
-            "mostrarlo a un cliente."
-        )
+        st.warning(t("warning_no_gana_random_walk"))
     elif not bt["le_gana_al_benchmark"].all():
         gana = bt[bt["le_gana_al_benchmark"]]["horizon"].apply(
             lambda h: etiqueta_horizonte(int(h), period_label)
         ).tolist()
-        st.info(
-            "El modelo le gana al supuesto de 'el precio se queda igual' "
-            f"solo en: {', '.join(gana)}. En los demás horizontes conviene "
-            "presentar la proyección como escenario, no como pronóstico."
-        )
+        st.info(t("info_gana_solo_en", horizontes=", ".join(gana)))
 
     bt_display = bt.copy()
-    bt_display["Horizonte"] = bt_display["horizon"].apply(
+    bt_display[t("col_horizonte")] = bt_display["horizon"].apply(
         lambda h: etiqueta_horizonte(int(h), period_label)
     )
-    bt_display["¿Le gana?"] = bt_display["le_gana_al_benchmark"].map({True: "Sí", False: "No"})
+    bt_display[t("le_gana")] = bt_display["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
     st.dataframe(
-        bt_display[["Horizonte", "n_folds", "rmse_model", "rmse_naive_zero",
-                    "rmse_naive_persist", "mejora_vs_benchmark_%", "¿Le gana?"]].rename(columns={
-            "n_folds": "Semanas probadas", "rmse_model": "Error del modelo (RMSE)",
-            "rmse_naive_zero": "Error si el precio no cambia",
-            "rmse_naive_persist": "Error si repite la variación actual",
-            "mejora_vs_benchmark_%": "Mejora vs. no cambio (%)",
+        bt_display[[t("col_horizonte"), "n_folds", "rmse_model", "rmse_naive_zero",
+                    "rmse_naive_persist", "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
+            "n_folds": t("col_semanas_probadas"), "rmse_model": t("col_error_modelo_rmse"),
+            "rmse_naive_zero": t("col_error_si_no_cambia"),
+            "rmse_naive_persist": t("col_error_si_repite"),
+            "mejora_vs_benchmark_%": t("col_mejora_vs_no_cambio"),
         }),
         use_container_width=True, hide_index=True,
     )
@@ -722,7 +725,7 @@ def render_commodity_result(result, target_config):
     horizontes = sorted(result["backtest_detail"].keys())
     if horizontes:
         h_sel = st.selectbox(
-            "Ver el detalle semana a semana del horizonte:", horizontes,
+            t("ver_detalle_semana"), horizontes,
             format_func=lambda h: etiqueta_horizonte(int(h), period_label),
             key="acero_h",
         )
@@ -733,17 +736,18 @@ def render_commodity_result(result, target_config):
     mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
     with e1:
         r2 = result["forecast_path"].iloc[0]["r_squared_adj"]
-        render_metric_card("Qué tanto explica el modelo", f"{r2:.1%}")
-        st.caption(f"De la variación del precio a {etiqueta_horizonte(int(result['forecast_path'].iloc[0]['horizon']), period_label)}")
+        render_metric_card(t("qué_tanto_explica"), f"{r2:.1%}")
+        st.caption(t("caption_variacion_precio_a",
+                     h=etiqueta_horizonte(int(result['forecast_path'].iloc[0]['horizon']), period_label)))
     with e2:
-        render_metric_card("Mejor mejora vs. no cambio", f"{mejor['mejora_vs_benchmark_%']:.0f}%")
-        st.caption(f"En el horizonte de {etiqueta_horizonte(int(mejor['horizon']), period_label)}")
+        render_metric_card(t("mejor_mejora_vs_no_cambio"), f"{mejor['mejora_vs_benchmark_%']:.0f}%")
+        st.caption(t("caption_en_horizonte", h=etiqueta_horizonte(int(mejor['horizon']), period_label)))
     with e3:
-        render_metric_card("Semanas de historia", f"{len(result['dataset'])}")
-        st.caption(f"Desde {pd.to_datetime(result['dataset']['date']).min():%Y}")
+        render_metric_card(t("semanas_de_historia"), f"{len(result['dataset'])}")
+        st.caption(t("caption_desde_anio", anio=f"{pd.to_datetime(result['dataset']['date']).min():%Y}"))
 
     # ------------------------------------------------------------------
-    with st.expander("Ver el detalle estadístico completo"):
+    with st.expander(t("ver_detalle_estadistico")):
         render_significancia(
             result["significance"],
             etiqueta_horizonte(result["significance_horizon"], period_label),
@@ -776,24 +780,22 @@ def render_commodity_result(result, target_config):
 
 # ======================================================================
 def main_app():
-    top_left, top_right = st.columns([5, 1.5])
+    top_left, top_mid, top_right = st.columns([4, 1, 1.5])
     with top_left:
         st.markdown(render_badge("ISI | CEIC API"), unsafe_allow_html=True)
+    with top_mid:
+        selector_idioma(key_sufijo="main")
     with top_right:
-        if st.button("Cerrar sesión", key="logout_btn"):
+        if st.button(t("cerrar_sesion"), key="logout_btn"):
             st.session_state.logged_in = False
             st.session_state.result = None
             st.rerun()
 
-    st.title("¿Hacia dónde va la economía?")
-    st.markdown(
-        "Elige qué indicador quieres proyectar. El sistema busca automáticamente "
-        "los datos de alta frecuencia más relacionados con ese indicador y arma "
-        "la proyección — no hace falta saber de dónde vienen los datos."
-    )
+    st.title(t("main_title"))
+    st.markdown(t("main_intro"))
     st.markdown("---")
 
-    st.markdown("#### ¿Qué quieres proyectar?")
+    st.markdown(f"#### {t('que_proyectar')}")
     target_key = st.selectbox(
         " ", options=list(TARGET_CATALOG.keys()),
         format_func=lambda k: TARGET_CATALOG[k]["label"],
