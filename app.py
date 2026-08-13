@@ -99,9 +99,25 @@ def etiqueta_periodo(period_label, plural=False, capitalizar=False):
         singular = {"mes": "mês", "trimestre": "trimestre", "semana": "semana",
                     "período": "período", "periodo": "período"}.get(period_label, period_label)
         texto = ("meses" if singular == "mês" else f"{singular}s") if plural else singular
+    elif idioma == "en":
+        singular = {"mes": "month", "trimestre": "quarter", "semana": "week",
+                    "período": "period", "periodo": "period"}.get(period_label, period_label)
+        texto = f"{singular}s" if plural else singular
     else:
         texto = f"{period_label}s" if plural else period_label
     return texto.capitalize() if capitalizar else texto
+
+
+def etiqueta_mes(m):
+    """'{m} mes(es)' en el idioma activo — separado de etiqueta_horizonte
+    porque acá el número de meses YA es la unidad (no hay que convertir
+    semanas ni trimestres)."""
+    idioma = st.session_state.get("idioma", "es")
+    if idioma == "pt":
+        return f"{m} mês" if m == 1 else f"{m} meses"
+    if idioma == "en":
+        return f"{m} month" if m == 1 else f"{m} months"
+    return f"{m} mes" if m == 1 else f"{m} meses"
 
 
 def etiqueta_horizonte(h, period_label):
@@ -112,7 +128,9 @@ def etiqueta_horizonte(h, period_label):
     las 6 series conviven honestamente, pero nadie pregunta "¿cómo va el
     acero en 22 semanas?". Se muestra en meses.
     """
-    if st.session_state.get("idioma", "es") == "pt":
+    idioma = st.session_state.get("idioma", "es")
+
+    if idioma == "pt":
         if period_label == "semana":
             meses = h / SEMANAS_POR_MES
             n = int(round(meses))
@@ -122,6 +140,16 @@ def etiqueta_horizonte(h, period_label):
         unidad = {"mes": "mês", "período": "período", "periodo": "período"}.get(period_label, period_label)
         if unidad == "mês":
             return "1 mês" if h == 1 else f"{h} meses"
+        return f"{h} {unidad}s" if h != 1 else f"1 {unidad}"
+
+    if idioma == "en":
+        if period_label == "semana":
+            meses = h / SEMANAS_POR_MES
+            n = int(round(meses))
+            return f"{n} month" if n == 1 else f"{n} months"
+        if period_label == "trimestre":
+            return "1 quarter" if h == 1 else f"{h} quarters"
+        unidad = {"mes": "month", "período": "period", "periodo": "period"}.get(period_label, period_label)
         return f"{h} {unidad}s" if h != 1 else f"1 {unidad}"
 
     if period_label == "semana":
@@ -136,12 +164,22 @@ def etiqueta_horizonte(h, period_label):
 
 def etiqueta_benchmark(benchmark, period_label):
     """Cómo se le explica al cliente contra qué se está comparando."""
-    if st.session_state.get("idioma", "es") == "pt":
+    idioma = st.session_state.get("idioma", "es")
+
+    if idioma == "pt":
         if benchmark == "zero":
             return "o preço fica igual"
         unidad = {"mes": "mês", "trimestre": "trimestre", "semana": "semana",
                   "período": "período", "periodo": "período"}.get(period_label, period_label)
         return f"repetir o dado do {unidad} atual"
+
+    if idioma == "en":
+        if benchmark == "zero":
+            return "the price stays the same"
+        unidad = {"mes": "month", "trimestre": "quarter", "semana": "week",
+                  "período": "period", "periodo": "period"}.get(period_label, period_label)
+        return f"repeating the current {unidad}'s figure"
+
     if benchmark == "zero":
         return "el precio se queda igual"
     return f"repetir el dato del {period_label} actual"
@@ -150,11 +188,18 @@ def tabla_extraccion_legible(df):
     """Renombra la tabla de extracción a columnas que se le muestran al cliente."""
     if df is None or df.empty:
         return df
-    if st.session_state.get("idioma", "es") == "pt":
+    idioma = st.session_state.get("idioma", "es")
+    if idioma == "pt":
         cols = {
             "serie": "Série", "id_ceic": "ID no CEIC", "n_obs": "Observações",
             "desde": "Desde", "hasta": "Até", "frecuencia_real": "Frequência real",
             "ultimo_valor": "Último dado",
+        }
+    elif idioma == "en":
+        cols = {
+            "serie": "Series", "id_ceic": "CEIC ID", "n_obs": "Observations",
+            "desde": "From", "hasta": "To", "frecuencia_real": "Actual frequency",
+            "ultimo_valor": "Latest value",
         }
     else:
         cols = {
@@ -318,9 +363,7 @@ def render_nowcast_result(result, target_config):
     meses_sel = st.selectbox(
         t("con_cuantos_meses"), sorted(result["detalles"].keys()),
         index=len(result["detalles"]) - 1,
-        format_func=lambda m: (f"{m} mês" if m == 1 else f"{m} meses")
-                     if st.session_state.get("idioma", "es") == "pt"
-                     else (f"{m} mes" if m == 1 else f"{m} meses"),
+        format_func=etiqueta_mes,
         key="nowcast_m",
     )
     detalle = result["detalles"][meses_sel]
