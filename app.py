@@ -20,11 +20,11 @@ import streamlit as st
 from ceic_api_client.pyceic import Ceic
 from datetime import date
 
-from indicator_catalog import TARGET_CATALOG
+from indicator_catalog import TARGET_CATALOG, entradas_por_grupo
 from forecast_orchestrator import run_forecast
 from steel_pipeline import plot_price_fan_chart
 from theme import apply_custom_theme, render_badge, render_metric_card, render_hero_metric
-from translation import t, selector_idioma
+from translation import t, tl, tl_lista, selector_idioma
 
 st.set_page_config(page_title="ISI | Proyección de indicadores", layout="wide")
 apply_custom_theme()
@@ -33,8 +33,18 @@ apply_custom_theme()
 # varias series de China Premium no existen antes y Nicolás pidió al
 # menos 5 años de observaciones.
 DEFAULT_START_DATE = {"auto_select": date(2005, 1, 1),
+                      "fixed_features": date(2005, 1, 1),
                       "multi_feature": date(2015, 1, 1),
                       "nowcast": date(2005, 1, 1)}
+
+# El catálogo guarda una sola etiqueta de unidad por entrada (en
+# español). Este mapa la lleva al idioma activo sin duplicar la etiqueta
+# en cada entrada del catálogo.
+EJES = {
+    "Crecimiento interanual (%)": "eje_crecimiento_interanual",
+    "Variación interanual (%)": "eje_variacion_interanual",
+    "Variación % del precio": "eje_variacion_precio",
+}
 
 SEMANAS_POR_MES = 4.345
 CACHE_TTL_SEGUNDOS = 60 * 60 * 6   # 6 horas: los datos de CEIC no cambian
@@ -52,7 +62,8 @@ CACHE_TTL_SEGUNDOS = 60 * 60 * 6   # 6 horas: los datos de CEIC no cambian
 # El guion bajo en _ceic le dice a Streamlit que no intente hashear el
 # cliente de CEIC (no es hasheable y tumbaría el caché).
 @st.cache_data(ttl=CACHE_TTL_SEGUNDOS, show_spinner=False)
-def run_forecast_cacheado(_ceic, target_key, start_date, usar_extras):
+def run_forecast_cacheado(_ceic, target_key, start_date, usar_extras,
+                           modo_tamizaje="estricto"):
     # Nota: esta función solo se ejecuta en un "cache miss" (primera vez que
     # se pide este indicador, o después de "Recargar datos"). El cuadro de
     # pasos de acá abajo se crea y se llena DENTRO de esta función a
@@ -64,22 +75,22 @@ def run_forecast_cacheado(_ceic, target_key, start_date, usar_extras):
     # vuelve a dibujar igual, sin recalcular nada.
     target_config = TARGET_CATALOG[target_key]
 
-    with st.expander(f"Pasos de la proyección — {target_config['label']}", expanded=True):
+    # Nicolás sobre este cuadro: "aquí ya me parece que es demasiada
+    # información... eso se puede esconder". Va colapsado por defecto y
+    # con una línea por etapa, no una por serie evaluada.
+    with st.expander(t("pasos_proyeccion", target=tl(target_config["label"])),
+                      expanded=False):
         def reportar(mensaje):
             print(f"[Forecast] {mensaje}")
             st.write(mensaje)
 
-        reportar(f"Indicador solicitado: {target_config['label']} "
-                  f"(modo: {target_config.get('mode', 'auto_select')})")
-        reportar(f"Usando datos desde: {start_date}")
-
         kwargs = {"start_date": start_date, "progress_callback": reportar}
         if target_config.get("mode", "auto_select") == "auto_select":
             kwargs["usar_series_adicionales"] = usar_extras
-            reportar(f"Evaluar series adicionales del catálogo: {'sí' if usar_extras else 'no'}")
+            kwargs["modo_tamizaje"] = modo_tamizaje
 
         resultado = run_forecast(_ceic, target_config, **kwargs)
-        st.success(f"{target_config['label']}: proyección lista.")
+        st.success(t("proyeccion_lista", target=tl(target_config["label"])))
 
     return resultado
 
@@ -184,6 +195,29 @@ def etiqueta_benchmark(benchmark, period_label):
         return "el precio se queda igual"
     return f"repetir el dato del {period_label} actual"
 
+def eje(unit_label):
+    """Etiqueta del eje Y en el idioma activo."""
+    clave = EJES.get(unit_label)
+    return t(clave) if clave else unit_label
+
+
+def labels_grafico(serie_label=None):
+    """
+    Leyendas de los gráficos en el idioma activo. Se arman acá y se pasan
+    a los módulos de modelo, que no importan Streamlit y por eso no
+    pueden resolver el idioma por su cuenta.
+    """
+    return {
+        "serie": tl(serie_label) if serie_label else None,
+        "rango": t("leyenda_rango"),
+        "proyeccion": t("leyenda_proyeccion"),
+        "real": t("leyenda_real"),
+        "modelo": t("leyenda_modelo"),
+        "precio_observado": t("leyenda_real"),
+        "eje": t("eje_variacion_precio"),
+    }
+
+
 def tabla_extraccion_legible(df):
     """Renombra la tabla de extracción a columnas que se le muestran al cliente."""
     if df is None or df.empty:
@@ -193,22 +227,27 @@ def tabla_extraccion_legible(df):
         cols = {
             "serie": "Série", "id_ceic": "ID no CEIC", "n_obs": "Observações",
             "desde": "Desde", "hasta": "Até", "frecuencia_real": "Frequência real",
-            "ultimo_valor": "Último dado",
+            "ultimo_valor": "Último dado", "transformacion": "Transformação",
         }
     elif idioma == "en":
         cols = {
             "serie": "Series", "id_ceic": "CEIC ID", "n_obs": "Observations",
             "desde": "From", "hasta": "To", "frecuencia_real": "Actual frequency",
-            "ultimo_valor": "Latest value",
+            "ultimo_valor": "Latest value", "transformacion": "Transformation",
         }
     else:
         cols = {
             "serie": "Serie", "id_ceic": "ID en CEIC", "n_obs": "Observaciones",
             "desde": "Desde", "hasta": "Hasta", "frecuencia_real": "Frecuencia real",
-            "ultimo_valor": "Último dato",
+            "ultimo_valor": "Último dato", "transformacion": "Transformación",
         }
     presentes = [c for c in cols if c in df.columns]
-    return df[presentes].rename(columns=cols)
+    vista = df[presentes].copy()
+    # Los nombres de las series venían del catálogo, siempre en español.
+    # Samuel: "los nombres están en español... y ese eje también".
+    if "serie" in vista.columns:
+        vista["serie"] = vista["serie"].map(tl)
+    return vista.rename(columns=cols)
 
 
 def formatear_p(serie):
@@ -216,14 +255,19 @@ def formatear_p(serie):
 
 
 def render_significancia(tabla, horizonte_txt):
-    st.markdown(
-        f"**Significancia estadística ({horizonte_txt} adelante)** — qué "
-        "variables mueven de verdad al indicador y cuáles no:"
+    # OJO: la tabla se llama "tab" y no "t" a propósito. Antes era "t" y
+    # sombreaba a la función t() de translation dentro de esta función:
+    # en el momento en que se agregara un texto traducido acá, la app
+    # habría reventado con un TypeError críptico.
+    st.markdown(t("significancia_titulo", h=horizonte_txt))
+    tab = tabla.copy()
+    tab["p_value"] = formatear_p(tab["p_value"])
+    tab["significativo_95%"] = tab["significativo_95%"].map(
+        {True: t("si"), False: t("no")}
     )
-    t = tabla.copy()
-    t["p_value"] = formatear_p(t["p_value"])
-    t["significativo_95%"] = t["significativo_95%"].map({True: "Sí", False: "No"})
-    st.dataframe(t, use_container_width=True, hide_index=True)
+    if "variable" in tab.columns:
+        tab["variable"] = tab["variable"].map(tl)
+    st.dataframe(tab, use_container_width=True, hide_index=True)
 
 
 def render_extraccion(result, period_label):
@@ -241,6 +285,17 @@ def render_extraccion(result, period_label):
     st.markdown(t("de_donde_salen_datos"))
     st.caption(t("caption_extraccion_serie"))
     st.dataframe(tabla_extraccion_legible(tabla), use_container_width=True, hide_index=True)
+
+    # "Que sea posible descargar toda la data" (Nicolás). La tabla de
+    # arriba es el resumen; esto es el dato crudo tal como llegó de la
+    # API, para que el cliente lo abra en Excel y lo verifique.
+    crudas = result.get("series_crudas")
+    if crudas is not None and not crudas.empty:
+        st.download_button(
+            t("descargar_series"),
+            crudas.to_csv(index=False).encode("utf-8"),
+            "series_ceic.csv", "text/csv",
+        )
 
     dataset = result["dataset"]
     st.markdown(t("datos_recientes", n=min(8, len(dataset))))
@@ -329,7 +384,7 @@ def render_nowcast_result(result, target_config):
         hero_col, tabla_col = st.columns([1, 2.2])
         with hero_col:
             render_hero_metric(
-                label=f"{result['label_objetivo']} — {cal['trimestre_objetivo']}",
+                label=f"{tl(result['label_objetivo'])} — {cal['trimestre_objetivo']}",
                 value=f"{est['nowcast']:.1f}%",
                 icon="",
                 caption=t("estimado_con_meses", n=est['meses_usados']),
@@ -387,7 +442,7 @@ def render_nowcast_result(result, target_config):
                  use_container_width=True, hide_index=True)
 
     with st.expander(t("ver_detalle_estadistico")):
-        st.markdown("**Precisión y significancia por corte:**")
+        st.markdown(t("precision_significancia"))
         det = tabla.copy()
         det["p_value"] = formatear_p(det["p_value"])
         st.dataframe(
@@ -404,19 +459,18 @@ def render_nowcast_result(result, target_config):
             use_container_width=True, hide_index=True,
         )
 
-        st.info(
-            "**Dos advertencias honestas.** (1) El R² ajustado se calcula sobre "
-            "todo el período, incluido 2020, así que sale inflado — el número "
-            "que vale es el error del backtest. (2) La validación usa la serie "
-            "de PIB ya revisada; en el momento real solo existía la primera "
-            "estimación. Es la práctica estándar, pero implica que la operación "
-            "real sería algo menos precisa que esta tabla."
-        )
+        # Nicolás: "hay unos textos que me parecen muy largos... esos
+        # mensajes, si vale la pena tenerlos o simplemente los quitamos".
+        # La advertencia se queda (es información honesta que hay que
+        # poder sostener si la preguntan) pero pasa de bloque azul a
+        # caption, dentro del detalle técnico y no en la pantalla
+        # principal.
+        st.caption(t("advertencias_nowcast"))
 
-        st.markdown("**Resultados completos del backtest:**")
+        st.markdown(t("resultados_backtest"))
         st.dataframe(detalle, use_container_width=True, hide_index=True)
         st.download_button(
-            "Descargar backtest (CSV)", detalle.to_csv(index=False).encode("utf-8"),
+            t("descargar_backtest"), detalle.to_csv(index=False).encode("utf-8"),
             "nowcast_backtest.csv", "text/csv",
         )
 
@@ -429,16 +483,16 @@ def plot_nowcast_historia(detalle, color_real="#B33A0F", color_now="#FF5315",
     x = detalle["trimestre"]
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=x, y=detalle["real"], mode="lines+markers", name="Dato oficial del DANE",
+        x=x, y=detalle["real"], mode="lines+markers", name=t("leyenda_dato_oficial"),
         line=dict(color=color_real, width=2.5), marker=dict(size=6),
     ))
     fig.add_trace(go.Scatter(
-        x=x, y=detalle["nowcast"], mode="lines+markers", name="Estimado por el modelo",
+        x=x, y=detalle["nowcast"], mode="lines+markers", name=t("leyenda_estimado"),
         line=dict(color=color_now, width=2.5, dash="dot"),
         marker=dict(size=7, symbol="diamond"),
     ))
     fig.update_layout(
-        xaxis_title=None, yaxis_title="Crecimiento interanual (%)",
+        xaxis_title=None, yaxis_title=t("eje_crecimiento_interanual"),
         hovermode="x unified", plot_bgcolor="white", paper_bgcolor="white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(t=10),
@@ -452,10 +506,19 @@ def plot_nowcast_historia(detalle, color_real="#B33A0F", color_now="#FF5315",
 # Resultados — caso macro (PIB de Colombia)
 # ======================================================================
 def render_macro_result(result, target_config):
+    """
+    Pantalla de resultados de los dos modos de proyección a futuro:
+    auto_select (PIB de Colombia, elige el indicador principal y tamiza)
+    y fixed_features (las tablas de Samuel, predictores ya definidos).
+
+    Comparten todo salvo dos bloques del detalle técnico, así que se
+    manejan acá con un if en vez de duplicar 150 líneas.
+    """
     target_label = target_config["label"]
     period_label = target_config.get("period_label", "trimestre")
     model, dataset = result["model"], result["dataset"]
     path, bt = result["forecast_path"], result["backtest_summary"]
+    es_fijo = result.get("modo") == "fixed_features"
 
     primero = path.iloc[0]
     ultimo = path.iloc[-1]
@@ -463,7 +526,7 @@ def render_macro_result(result, target_config):
     hero_col, chart_col = st.columns([1, 2.2])
     with hero_col:
         render_hero_metric(
-            label=t("crecimiento_esperado", target=target_label),
+            label=t("crecimiento_esperado", target=tl(target_label)),
             value=f"{primero['forecast']:.1f}%",
             icon="",
             caption=t("rango_proximo", lo=f"{primero['ci_95_lower']:.1f}",
@@ -473,13 +536,35 @@ def render_macro_result(result, target_config):
             t("a_horizonte", h=etiqueta_horizonte(int(ultimo['horizon']), period_label)),
             f"{ultimo['forecast']:.1f}%",
         )
-        st.caption(
-            t("basado_en_indicador", indicador=result['chosen_indicator'],
-              target=target_label.lower())
-        )
+        if es_fijo:
+            st.caption(t("predictores_usados",
+                          lista=tl_lista(result.get("predictores_usados", []))))
+        else:
+            st.caption(
+                t("basado_en_indicador", indicador=tl(result['chosen_indicator']),
+                  target=tl(target_label).lower())
+            )
     with chart_col:
-        st.plotly_chart(model.plot_fan_chart(dataset, history_periods=40),
-                        use_container_width=True)
+        st.plotly_chart(
+            model.plot_fan_chart(
+                dataset, history_periods=40,
+                labels=labels_grafico(model.series_label),
+                y_title=eje(target_config.get("unit_label")),
+            ),
+            use_container_width=True,
+        )
+
+    # Series que quedaron fuera: se dice, no se esconde. Nicolás quería
+    # saber exactamente qué estaba usando el modelo y qué no.
+    if es_fijo:
+        fuera = result.get("descartadas_por_colinealidad") or []
+        if fuera:
+            st.caption(t("descartadas_colinealidad",
+                          lista=tl_lista([d["serie"] for d in fuera])))
+        sin_datos = result.get("series_sin_datos") or []
+        if sin_datos:
+            st.caption(t("series_sin_datos",
+                          lista=tl_lista([x["serie"] for x in sin_datos])))
 
     st.caption(t("caption_banda_ensancha"))
 
@@ -528,13 +613,19 @@ def render_macro_result(result, target_config):
             format_func=lambda h: etiqueta_horizonte(int(h), period_label),
             key="macro_h",
         )
-        st.plotly_chart(model.plot_backtest_bars(result["backtest_detail"][h_sel]),
-                        use_container_width=True)
+        st.plotly_chart(
+            model.plot_backtest_bars(
+                result["backtest_detail"][h_sel],
+                labels=labels_grafico(),
+                y_title=eje(target_config.get("unit_label")),
+            ),
+            use_container_width=True,
+        )
 
     e1, e2, e3 = st.columns(3)
     with e1:
         render_metric_card(t("qué_tanto_explica"), f"{primero['r_squared_adj']:.1%}")
-        st.caption(t("caption_comportamiento_proximo", target=target_label.lower(),
+        st.caption(t("caption_comportamiento_proximo", target=tl(target_label).lower(),
                      periodo=etiqueta_periodo(period_label)))
     with e2:
         mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
@@ -549,22 +640,24 @@ def render_macro_result(result, target_config):
 
     # ------------------------------------------------------------------
     with st.expander(t("ver_detalle_estadistico")):
-        st.markdown(
-            f"**Elección del indicador principal.** Se probaron "
-            f"{len(result['candidates_tried'])} candidatos y se comparó qué tan "
-            f"bien explica cada uno el comportamiento de {target_label.lower()}:"
-        )
-        cand = pd.DataFrame(result["candidates_tried"])
-        cand["r_squared_adj"] = cand["r_squared_adj"].apply(
-            lambda r: f"{r:.1%}" if pd.notna(r) else "—"
-        )
-        st.dataframe(
-            cand.rename(columns={"label": "Indicador", "r_squared_adj": "R² ajustado",
-                                  "status": "Estado"}),
-            use_container_width=True, hide_index=True,
-        )
+        if result.get("candidates_tried"):
+            st.markdown(t("eleccion_indicador", n=len(result["candidates_tried"])))
+            cand = pd.DataFrame(result["candidates_tried"])
+            cand["label"] = cand["label"].map(tl)
+            cand["r_squared_adj"] = cand["r_squared_adj"].apply(
+                lambda r: f"{r:.1%}" if pd.notna(r) else "—"
+            )
+            st.dataframe(
+                cand.rename(columns={"label": t("col_indicador"),
+                                      "r_squared_adj": t("col_r2_ajustado"),
+                                      "status": t("col_estado")}),
+                use_container_width=True, hide_index=True,
+            )
 
-        render_screening(result, period_label)
+        if es_fijo:
+            render_diagnostico_fijas(result, period_label)
+        else:
+            render_screening(result, period_label)
 
         render_significancia(
             result["significance"],
@@ -572,21 +665,23 @@ def render_macro_result(result, target_config):
         )
         render_colinealidad(result)
 
-        st.markdown("**Capacidad explicativa por horizonte:**")
+        st.markdown(t("capacidad_explicativa"))
         p = path.copy()
-        p["Horizonte"] = p["horizon"].apply(lambda h: etiqueta_horizonte(int(h), period_label))
+        p[t("col_horizonte")] = p["horizon"].apply(
+            lambda h: etiqueta_horizonte(int(h), period_label)
+        )
         st.dataframe(
-            p[["Horizonte", "r_squared_adj", "n_obs", "errores"]].rename(columns={
-                "r_squared_adj": "R² ajustado", "n_obs": "Observaciones",
-                "errores": "Errores estándar",
+            p[[t("col_horizonte"), "r_squared_adj", "n_obs", "errores"]].rename(columns={
+                "r_squared_adj": t("col_r2_ajustado"), "n_obs": t("col_observaciones"),
+                "errores": t("col_errores_estandar"),
             }),
             use_container_width=True, hide_index=True,
         )
 
-        st.markdown("**Dataset completo usado para el modelo:**")
+        st.markdown(t("dataset_completo"))
         st.dataframe(dataset, use_container_width=True, hide_index=True)
         st.download_button(
-            "Descargar dataset (CSV)", dataset.to_csv(index=False).encode("utf-8"),
+            t("descargar_dataset"), dataset.to_csv(index=False).encode("utf-8"),
             "proyeccion_dataset.csv", "text/csv",
         )
 
@@ -611,28 +706,19 @@ def render_colinealidad(result):
 
     if f_p is not None:
         f_txt = "< 0.001" if f_p < 0.001 else f"{f_p:.3f}"
-        st.markdown(
-            f"**El modelo en conjunto sí es significativo** (p del test F = {f_txt}), "
-            "aunque las variables por separado no lo sean. Eso no es una "
-            "contradicción — es lo que pasa cuando dos predictores dicen casi "
-            "lo mismo:"
-        )
+        st.markdown(t("modelo_conjunto_significativo", p=f_txt))
 
+    tabla = vif.copy()
+    tabla["variable"] = tabla["variable"].map(tl)
     st.dataframe(
-        vif.rename(columns={"variable": "Variable", "vif": "VIF",
-                             "colinealidad": "Colinealidad"}),
+        tabla.rename(columns={"variable": t("col_variable"), "vif": "VIF",
+                               "colinealidad": t("col_colinealidad")}),
         use_container_width=True, hide_index=True,
     )
 
     if not severa.empty:
-        nombres = ", ".join(severa["variable"].tolist())
-        st.warning(
-            f"**Colinealidad severa** en: {nombres} (VIF > 10). Estas variables "
-            "se solapan tanto que el modelo no puede distinguir el aporte de "
-            "cada una: los coeficientes quedan inestables y los errores "
-            "estándar enormes. La proyección en conjunto sigue siendo válida, "
-            "pero no se puede afirmar cuál de las dos manda."
-        )
+        st.caption(t("caption_colinealidad_severa",
+                      lista=tl_lista(severa["variable"].tolist())))
 
 
 def render_screening(result, period_label):
@@ -651,48 +737,82 @@ def render_screening(result, period_label):
     total = len(resumen)
     pasaron = int(resumen["pasa"].sum()) if "pasa" in resumen.columns else 0
 
-    st.markdown(
-        f"**Series adicionales evaluadas.** Se probaron {total} combinaciones de "
-        f"serie y horizonte, una por una. Para entrar al modelo, una serie tiene "
-        f"que pasar DOS filtros: ser estadísticamente significativa **y** reducir "
-        f"el error en el backtest. Pasaron {pasaron}."
-    )
+    st.markdown(t("series_adicionales_titulo", total=total, pasaron=pasaron))
     if pasaron == 0:
-        st.info(
-            "Ninguna serie adicional superó los dos filtros, así que el modelo "
-            f"se queda con {result['chosen_indicator']} como único predictor. "
-            "Esto no es una falla: agregar variables que no aportan empeora la "
-            "proyección fuera de muestra."
-        )
+        st.caption(t("ninguna_paso", indicador=tl(result.get("chosen_indicator", ""))))
 
     tabla = resumen.copy()
+    if "candidata" in tabla.columns:
+        tabla["candidata"] = tabla["candidata"].map(tl)
     if "horizonte" in tabla.columns:
         tabla["horizonte"] = tabla["horizonte"].apply(
             lambda h: etiqueta_horizonte(int(h), period_label) if pd.notna(h) else "—"
         )
     for col in ("pasa_significancia", "pasa_backtest", "pasa"):
         if col in tabla.columns:
-            tabla[col] = tabla[col].map({True: "Sí", False: "No"})
+            tabla[col] = tabla[col].map({True: t("si"), False: t("no")})
     if "p_value" in tabla.columns:
         tabla["p_value"] = formatear_p(tabla["p_value"])
 
     st.dataframe(
         tabla.rename(columns={
-            "bloque": "Bloque", "candidata": "Serie", "horizonte": "Horizonte",
-            "p_value": "p-value", "mejora_rmse_%": "Mejora del error (%)",
-            "pasa_significancia": "Significativa", "pasa_backtest": "Mejora el backtest",
-            "pasa": "Entra al modelo",
+            "bloque": t("col_bloque"), "candidata": t("col_serie"),
+            "horizonte": t("col_horizonte"), "p_value": t("col_p_value"),
+            "mejora_rmse_%": t("col_mejora_error"),
+            "pasa_significancia": t("col_significativa"),
+            "pasa_backtest": t("col_mejora_backtest"),
+            "pasa": t("col_entra_modelo"), "estado": t("col_estado"),
         }),
         use_container_width=True, hide_index=True,
     )
 
     seleccion = result.get("seleccion_por_horizonte") or {}
     if any(seleccion.values()):
-        st.caption(
-            "Se limita a 3 series adicionales por horizonte: con ~80 "
-            "observaciones trimestrales, más predictores producen un modelo "
-            "que memoriza el pasado en vez de anticipar el futuro."
+        st.caption(t("caption_limite_series"))
+
+
+def render_diagnostico_fijas(result, period_label):
+    """
+    Modo fixed_features: la tabla equivalente al tamizaje, pero
+    informativa. Todas las series de research están en el modelo; esto
+    solo dice cuánto aporta cada una.
+
+    Es la respuesta a Nicolás mirando la pantalla: "no sé por qué la
+    descartas si el p-valor es de 0.009... estas tres tienen un valor
+    positivo, o sea funcional". Ahora ninguna se descarta por p-value —
+    el p-value se muestra y el modelo las usa.
+    """
+    resumen = result.get("diagnostico_resumen")
+    if resumen is None or resumen.empty:
+        return
+
+    st.markdown(t("aporte_individual"))
+
+    tabla = resumen.copy()
+    if "candidata" in tabla.columns:
+        tabla["candidata"] = tabla["candidata"].map(tl)
+    if "horizonte" in tabla.columns:
+        tabla["horizonte"] = tabla["horizonte"].apply(
+            lambda h: etiqueta_horizonte(int(h), period_label) if pd.notna(h) else "—"
         )
+    for col in ("pasa_significancia", "pasa_backtest"):
+        if col in tabla.columns:
+            tabla[col] = tabla[col].map({True: t("si"), False: t("no")})
+    if "p_value" in tabla.columns:
+        tabla["p_value"] = formatear_p(tabla["p_value"])
+    # La columna "pasa" no aplica acá: en este modo entran todas.
+    tabla = tabla.drop(columns=[c for c in ("pasa", "bloque") if c in tabla.columns])
+
+    st.dataframe(
+        tabla.rename(columns={
+            "candidata": t("col_serie"), "horizonte": t("col_horizonte"),
+            "n_obs": t("col_observaciones"), "p_value": t("col_p_value"),
+            "mejora_rmse_%": t("col_mejora_error"),
+            "pasa_significancia": t("col_significativa"),
+            "pasa_backtest": t("col_mejora_backtest"), "estado": t("col_estado"),
+        }),
+        use_container_width=True, hide_index=True,
+    )
 
 
 # ======================================================================
@@ -720,7 +840,10 @@ def render_commodity_result(result, target_config):
             t("caption_ultimo_dato_acero", fecha=f"{result['last_date']:%d-%b-%Y}")
         )
     with chart_col:
-        st.plotly_chart(plot_price_fan_chart(result), use_container_width=True)
+        st.plotly_chart(
+            plot_price_fan_chart(result, labels=labels_grafico()),
+            use_container_width=True,
+        )
 
     st.markdown(t("precio_proyectado_horizonte"))
     pp = price_path.copy()
@@ -772,22 +895,37 @@ def render_commodity_result(result, target_config):
             format_func=lambda h: etiqueta_horizonte(int(h), period_label),
             key="acero_h",
         )
-        st.plotly_chart(result["model"].plot_backtest_bars(result["backtest_detail"][h_sel]),
-                        use_container_width=True)
+        st.plotly_chart(
+            result["model"].plot_backtest_bars(
+                result["backtest_detail"][h_sel],
+                labels=labels_grafico(),
+                y_title=eje(target_config.get("unit_label")),
+            ),
+            use_container_width=True,
+        )
 
-    e1, e2, e3 = st.columns(3)
+    # Nicolás sobre el caso del acero: "de pronto volver más chiquito el
+    # número del accuracy, para que no se entienda de tanto". El modelo
+    # no le gana al random walk y el R² a 1 mes es de 1,3%: mostrarlo en
+    # una tarjeta grande al lado del precio proyectado lo pone en el
+    # centro de la conversación equivocada. El caso de uso es "usted
+    # puede construir tableros como este con datos de CEIC", no "este es
+    # el mejor modelo del acero". Las métricas pasan a texto pequeño
+    # debajo del backtest; el número sigue estando, y sigue siendo el
+    # mismo.
     mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
-    with e1:
-        r2 = result["forecast_path"].iloc[0]["r_squared_adj"]
-        render_metric_card(t("qué_tanto_explica"), f"{r2:.1%}")
-        st.caption(t("caption_variacion_precio_a",
-                     h=etiqueta_horizonte(int(result['forecast_path'].iloc[0]['horizon']), period_label)))
-    with e2:
-        render_metric_card(t("mejor_mejora_vs_no_cambio"), f"{mejor['mejora_vs_benchmark_%']:.0f}%")
-        st.caption(t("caption_en_horizonte", h=etiqueta_horizonte(int(mejor['horizon']), period_label)))
-    with e3:
-        render_metric_card(t("semanas_de_historia"), f"{len(result['dataset'])}")
-        st.caption(t("caption_desde_anio", anio=f"{pd.to_datetime(result['dataset']['date']).min():%Y}"))
+    r2 = result["forecast_path"].iloc[0]["r_squared_adj"]
+    h_r2 = etiqueta_horizonte(int(result["forecast_path"].iloc[0]["horizon"]), period_label)
+    anio_inicio = f"{pd.to_datetime(result['dataset']['date']).min():%Y}"
+    h_mejor = etiqueta_horizonte(int(mejor["horizon"]), period_label)
+    st.caption(
+        f"{t('qué_tanto_explica')}: {r2:.1%} ({h_r2}) &nbsp;·&nbsp; "
+        f"{t('mejor_mejora_vs_no_cambio')}: {mejor['mejora_vs_benchmark_%']:.0f}% "
+        f"({h_mejor}) &nbsp;·&nbsp; "
+        f"{t('semanas_de_historia')}: {len(result['dataset'])} "
+        f"({t('caption_desde_anio', anio=anio_inicio)})",
+        unsafe_allow_html=True,
+    )
 
     # ------------------------------------------------------------------
     with st.expander(t("ver_detalle_estadistico")):
@@ -795,28 +933,25 @@ def render_commodity_result(result, target_config):
             result["significance"],
             etiqueta_horizonte(result["significance_horizon"], period_label),
         )
-        st.caption(
-            "A horizontes largos las ventanas de proyección se solapan casi "
-            "por completo, así que los errores estándar se calculan con la "
-            "corrección de Newey-West. Sin ella los p-values saldrían mucho "
-            "más optimistas de lo que corresponde."
-        )
+        st.caption(t("caption_hac"))
 
-        st.markdown("**Capacidad explicativa por horizonte:**")
+        st.markdown(t("capacidad_explicativa"))
         p = result["forecast_path"].copy()
-        p["Horizonte"] = p["horizon"].apply(lambda h: etiqueta_horizonte(int(h), period_label))
+        p[t("col_horizonte")] = p["horizon"].apply(
+            lambda h: etiqueta_horizonte(int(h), period_label)
+        )
         st.dataframe(
-            p[["Horizonte", "r_squared_adj", "n_obs", "errores"]].rename(columns={
-                "r_squared_adj": "R² ajustado", "n_obs": "Observaciones",
-                "errores": "Errores estándar",
+            p[[t("col_horizonte"), "r_squared_adj", "n_obs", "errores"]].rename(columns={
+                "r_squared_adj": t("col_r2_ajustado"), "n_obs": t("col_observaciones"),
+                "errores": t("col_errores_estandar"),
             }),
             use_container_width=True, hide_index=True,
         )
 
-        st.markdown("**Dataset usado para el modelo (variaciones semanales):**")
+        st.markdown(t("dataset_completo"))
         st.dataframe(result["dataset"], use_container_width=True, hide_index=True)
         st.download_button(
-            "Descargar dataset (CSV)", result["dataset"].to_csv(index=False).encode("utf-8"),
+            t("descargar_dataset"), result["dataset"].to_csv(index=False).encode("utf-8"),
             "acero_china_dataset.csv", "text/csv",
         )
 
@@ -836,49 +971,93 @@ def main_app():
 
     st.title(t("main_title"))
     st.markdown(t("main_intro"))
+
+    # Samuel lo pidió en la reunión: un párrafo corto explicando qué es
+    # esto, para poder mandárselo a su jefe (que no entendía por qué el
+    # ejercicio salía del lado de API y no del equipo de economistas).
+    # Va colapsado para no estorbar en la demo.
+    with st.expander(t("que_es_esto")):
+        st.markdown(t("texto_que_es_esto"))
+
     st.markdown("---")
 
-    st.markdown(f"#### {t('que_proyectar')}")
-    target_key = st.selectbox(
-        " ", options=list(TARGET_CATALOG.keys()),
-        format_func=lambda k: TARGET_CATALOG[k]["label"],
-        label_visibility="collapsed",
-    )
+    # ------------------------------------------------------------------
+    # Qué proyectar — agrupado por país
+    # ------------------------------------------------------------------
+    # Con Brasil adentro son 9 entradas y una lista plana ya no se lee:
+    # el comercial de Brasil tiene que poder encontrar lo suyo sin
+    # recorrer todo Colombia primero. Nicolás pidió el caso de Brasil
+    # justamente para que el equipo de allá lo muestre en portugués.
+    grupos = entradas_por_grupo()
+    claves_grupo = {"Colombia": "grupo_colombia", "Brasil": "grupo_brasil",
+                     "Commodities": "grupo_commodities"}
+    nombres_grupo = list(grupos.keys())
+
+    col_pais, col_ind = st.columns([1, 2])
+    with col_pais:
+        st.markdown(f"#### {t('pais_region')}")
+        grupo = st.selectbox(
+            " ", options=nombres_grupo,
+            format_func=lambda g: t(claves_grupo.get(g, "grupo_otros")),
+            label_visibility="collapsed", key="grupo_sel",
+        )
+    with col_ind:
+        st.markdown(f"#### {t('que_proyectar')}")
+        target_key = st.selectbox(
+            " ", options=grupos[grupo],
+            format_func=lambda k: tl(TARGET_CATALOG[k]["label"]),
+            label_visibility="collapsed", key=f"target_sel_{grupo}",
+        )
+
     target_config = TARGET_CATALOG[target_key]
-    target_label = target_config["label"]
+    target_label = tl(target_config["label"])
     mode = target_config.get("mode", "auto_select")
     period_label = target_config.get("period_label", "período")
+
     if mode == "nowcast":
-        st.caption(
-            "Estima el trimestre en curso antes de que se publique el dato "
-            "oficial, con los meses de datos que ya salieron."
-        )
+        st.caption(t("caption_nowcast"))
     else:
         horizonte_max = etiqueta_horizonte(
             max(target_config.get("horizons", [4])), period_label
         )
-        st.caption(f"Proyección hasta {horizonte_max} hacia adelante.")
+        st.caption(t("proyeccion_hasta", h=horizonte_max))
 
-    with st.expander("Configuración avanzada (opcional)"):
-        st.caption("Los valores por defecto ya funcionan — normalmente no hace falta tocar esto.")
-        start_date = st.date_input("Usar datos desde", value=DEFAULT_START_DATE[mode])
+    # ------------------------------------------------------------------
+    # Configuración avanzada
+    # ------------------------------------------------------------------
+    modo_tamizaje = "estricto"
+    with st.expander(t("config_avanzada")):
+        st.caption(t("caption_config_avanzada"))
+        start_date = st.date_input(t("usar_datos_desde"),
+                                    value=DEFAULT_START_DATE[mode])
         usar_extras = True
-        if mode == "auto_select":  # solo aplica a la proyección a futuro
+        if mode == "auto_select":   # solo aplica a la proyección a futuro
             usar_extras = st.checkbox(
-                "Evaluar las series adicionales para complementar el pronóstico",
-                value=True,
-                help="Prueba una por una las series que aportó el equipo de producto. "
-                     "Agrega tiempo a la corrida porque descarga y evalúa cada serie.",
+                t("evaluar_series_adicionales"), value=True,
+                help=t("help_evaluar_series"),
+            )
+            # El criterio de selección pasa a ser una decisión visible.
+            # Antes estaba fijo en "los dos filtros", que es lo que hizo
+            # que Nicolás viera descartada una serie con p = 0.009.
+            criterios = {"estricto": t("criterio_estricto"),
+                          "significancia": t("criterio_significancia")}
+            modo_tamizaje = st.radio(
+                t("criterio_seleccion"), options=list(criterios.keys()),
+                format_func=lambda k: criterios[k],
+                horizontal=True, help=t("help_criterio"),
             )
 
-    verbo = "Estimar" if mode == "nowcast" else "Proyectar"
+    # ------------------------------------------------------------------
+    # Botones
+    # ------------------------------------------------------------------
+    texto_boton = (t("boton_estimar", target=target_label) if mode == "nowcast"
+                    else t("boton_proyectar", target=target_label))
     col_run, col_cache = st.columns([4, 1])
     with col_run:
-        proyectar = st.button(f"{verbo} {target_label}", type="primary",
-                               use_container_width=True)
+        proyectar = st.button(texto_boton, type="primary", use_container_width=True)
     with col_cache:
-        if st.button("Recargar datos", use_container_width=True,
-                      help="Vuelve a descargar todo desde CEIC, ignorando el caché."):
+        if st.button(t("recargar_datos"), use_container_width=True,
+                      help=t("help_recargar")):
             print("[App] Limpiando caché — la próxima corrida vuelve a descargar todo desde CEIC.")
             run_forecast_cacheado.clear()
             st.session_state.result = None
@@ -887,12 +1066,12 @@ def main_app():
     if proyectar:
         try:
             st.session_state.result = run_forecast_cacheado(
-                Ceic, target_key, str(start_date), usar_extras
+                Ceic, target_key, str(start_date), usar_extras, modo_tamizaje
             )
             st.session_state.result_key = target_key
         except Exception as e:
             st.session_state.result = None
-            st.error(f"No se pudo generar la proyección: {e}")
+            st.error(t("error_proyeccion", error=e))
 
     result = st.session_state.result
     if result is not None and st.session_state.result_key == target_key:
@@ -902,9 +1081,11 @@ def main_app():
         elif mode == "multi_feature":
             render_commodity_result(result, target_config)
         else:
+            # auto_select y fixed_features comparten pantalla; el
+            # renderer decide qué bloques mostrar según result["modo"].
             render_macro_result(result, target_config)
     else:
-        st.info(f"Presiona **Proyectar {target_label}** para ver los resultados.")
+        st.info(t("presiona_proyectar", boton=texto_boton))
 
 
 if __name__ == "__main__":

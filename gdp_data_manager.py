@@ -353,39 +353,62 @@ class GDPForecastDataManager:
     # ------------------------------------------------------------------
     # Transformaciones
     # ------------------------------------------------------------------
-    @staticmethod
-    def monthly_to_quarterly(df, value_col="value", date_col="date", how="mean"):
-        """
-        Agrega una serie MENSUAL en niveles a frecuencia trimestral.
+    # Regla de resample de pandas y períodos de un año, por frecuencia
+    # base del modelo. Se agregó cuando aparecieron los objetivos
+    # MENSUALES de Samuel (inflación, ventas de vehículos, exportaciones):
+    # antes todo el manager asumía trimestre, y con un objetivo mensual
+    # eso significaba tirar 2 de cada 3 datos sin que nadie se enterara.
+    REGLA_RESAMPLE = {"Q": "QE", "M": "ME", "W": "W-FRI"}
+    PERIODOS_POR_ANIO = {"Q": 4, "M": 12, "W": 52}
 
-        how="mean" -> promedio de los 3 meses del trimestre (default,
+    @classmethod
+    def to_base_frequency(cls, df, freq="Q", value_col="value", date_col="date",
+                           how="mean"):
+        """
+        Agrega una serie en niveles a la frecuencia base del modelo.
+
+        freq="Q" -> trimestral (PIB), freq="M" -> mensual (inflación,
+        ventas de vehículos, exportaciones). Una serie que ya viene en la
+        frecuencia base pasa por acá sin perder nada: el resample la deja
+        igual.
+
+        how="mean" -> promedio de los períodos que caen adentro (default,
                        estándar para bridge equations)
-        how="last" -> último mes disponible del trimestre (útil para
-                       nowcasting cuando el trimestre aún está incompleto)
+        how="last" -> último dato disponible del período (útil para
+                       nowcasting cuando el período aún está incompleto)
         """
+        regla = cls.REGLA_RESAMPLE.get(freq, "QE")
         df = df.set_index(date_col)
-        quarterly = df[value_col].resample("QE").agg(how)
-        return quarterly.reset_index()
+        agregada = df[value_col].resample(regla).agg(how)
+        return agregada.reset_index()
 
-    @staticmethod
-    def to_growth_rate(df, value_col="value", date_col="date",
+    @classmethod
+    def monthly_to_quarterly(cls, df, value_col="value", date_col="date", how="mean"):
+        """Alias histórico de to_base_frequency(freq='Q'). Se mantiene
+        porque nowcast_pipeline y varios scripts sueltos ya lo llaman."""
+        return cls.to_base_frequency(df, freq="Q", value_col=value_col,
+                                      date_col=date_col, how=how)
+
+    @classmethod
+    def to_growth_rate(cls, df, value_col="value", date_col="date",
                         frequency="Q", method="yoy"):
         """
-        Convierte niveles (ya en frecuencia trimestral) en tasas de
+        Convierte niveles (ya en la frecuencia base) en tasas de
         crecimiento.
-          method="yoy" -> variación interanual (periods=4 en trimestral)
-          method="qoq" -> variación intertrimestral (periods=1)
+          method="yoy" -> variación interanual (4 períodos en trimestral,
+                          12 en mensual, 52 en semanal)
+          otro         -> variación respecto al período anterior
 
-        Se aplica DESPUÉS de monthly_to_quarterly para los indicadores
-        mensuales, y directamente sobre la serie de PIB (que ya viene
-        trimestral desde CEIC).
+        OJO: el número de períodos sale de la frecuencia. Cuando el
+        objetivo pasó a ser mensual, dejar el 4 fijo habría calculado
+        "variación a 4 meses" y llamado a eso interanual.
         """
         df = df.sort_values(date_col).copy()
-        periods = 4 if (method == "yoy" and frequency == "Q") else 1
+        periods = cls.PERIODOS_POR_ANIO.get(frequency, 4) if method == "yoy" else 1
         df["growth"] = df[value_col].pct_change(periods=periods) * 100
         return df.dropna(subset=["growth"])
 
-    def build_model_dataset(self, gdp_growth_df, indicator_growth_dfs):
+    def build_model_dataset(self, gdp_growth_df, indicator_growth_dfs, freq="Q"):
         """
         Combina el crecimiento del PIB (trimestral) con el crecimiento de
         cada indicador (ya agregado a trimestral vía monthly_to_quarterly
@@ -396,17 +419,20 @@ class GDPForecastDataManager:
         indicator_growth_dfs: dict {nombre_indicador: DataFrame con
                                      columnas ["date", "growth"]}
 
-        IMPORTANTE: el merge se hace por TRIMESTRE (pd.Period), no por
+        freq: frecuencia base del modelo ("Q" o "M"). Es la grilla a la
+              que se lleva el merge.
+
+        IMPORTANTE: el merge se hace por PERÍODO (pd.Period), no por
         fecha exacta. CEIC reporta el PIB con fecha de inicio de
-        trimestre (ej. 2005-01-01), mientras que monthly_to_quarterly()
-        genera fecha de FIN de trimestre para los indicadores mensuales
+        trimestre (ej. 2005-01-01), mientras que to_base_frequency()
+        genera fecha de FIN de período para los indicadores agregados
         (ej. 2005-03-31, por el resample("QE")). Si se juntara por fecha
         exacta, nunca haría match y el dataset saldría vacío — esto pasó
         con los datos reales de Colombia.
         """
         def with_quarter_key(df):
             df = df.copy()
-            df["_quarter"] = pd.to_datetime(df["date"]).dt.to_period("Q")
+            df["_quarter"] = pd.to_datetime(df["date"]).dt.to_period(freq)
             return df
 
         gdp = with_quarter_key(gdp_growth_df[["date", "growth"]])
@@ -631,7 +657,7 @@ dataset = manager.build_model_dataset(gdp_growth, {"ise": ise_growth})
 # ----------------------------------------------------------------------
 # Resumen de extracción — lo que Nicolás pidió mostrar explícitamente
 # ----------------------------------------------------------------------
-def resumen_extraccion(raw, etiquetas=None, ids=None):
+def resumen_extraccion(raw, etiquetas=None, ids=None, transformaciones=None):
     """
     Una fila por serie descargada: de dónde salió, cuántos datos trajo,
     qué período cubre, cada cuánto se publica de verdad y cuál es el dato
@@ -645,11 +671,25 @@ def resumen_extraccion(raw, etiquetas=None, ids=None):
     El espaciado se calcula de los datos, no de la etiqueta de CEIC:
     varias series dicen "Daily, Everyday" y llegan cada 10 días.
 
-    raw:       {slug: DataFrame con [date, value]}
-    etiquetas: {slug: nombre legible}
-    ids:       {slug: series_id de CEIC}
+    La columna de transformación se agregó en ago-2026: varias series de
+    las tablas de Samuel ya vienen en variación interanual desde CEIC
+    ("a/a" en el nombre) y otras vienen en niveles. Mostrar en la misma
+    tabla el último valor Y la transformación aplicada permite cachar en
+    dos segundos si alguna quedó mal clasificada — una serie marcada
+    "already_yoy" cuyo último dato es 5.400 en vez de 5,4 está mal, y sin
+    esta columna eso solo se notaba mucho después, en un gráfico raro.
+
+    raw:            {slug: DataFrame con [date, value]}
+    etiquetas:      {slug: nombre legible}
+    ids:            {slug: series_id de CEIC}
+    transformaciones: {slug: "yoy" | "already_yoy" | "level" | ...}
     """
     etiquetas, ids = etiquetas or {}, ids or {}
+    transformaciones = transformaciones or {}
+    nombre_transform = {
+        "yoy": "Variación interanual", "already_yoy": "Ya viene interanual",
+        "level": "Nivel", "log_change": "Variación logarítmica",
+    }
     filas = []
     for slug, df in raw.items():
         if df is None or df.empty:
@@ -671,8 +711,40 @@ def resumen_extraccion(raw, etiquetas=None, ids=None):
             "espaciado_mediano_dias": round(mediana, 1) if mediana == mediana else None,
             "frecuencia_real": etiqueta_frecuencia(mediana),
             "ultimo_valor": round(float(d["value"].iloc[-1]), 2),
+            "transformacion": nombre_transform.get(
+                transformaciones.get(slug), transformaciones.get(slug)
+            ),
         })
-    return pd.DataFrame(filas)
+    tabla = pd.DataFrame(filas)
+    # Si nadie pasó transformaciones, no se muestra una columna vacía.
+    if "transformacion" in tabla.columns and tabla["transformacion"].isna().all():
+        tabla = tabla.drop(columns="transformacion")
+    return tabla
+
+
+def series_largas(raw, etiquetas=None, ids=None):
+    """
+    Todas las series descargadas en un solo DataFrame formato largo
+    [serie, id_ceic, date, value], listo para descargar como CSV.
+
+    Nicolás lo pidió en la reunión: "que sea posible descargar toda la
+    data". La tabla de extracción muestra el resumen; esto es el dato
+    crudo, tal como llegó de la API, para que el cliente pueda abrirlo en
+    Excel y verificarlo por su cuenta. Ese "verifíquelo usted mismo" es
+    la mitad del argumento comercial.
+    """
+    etiquetas, ids = etiquetas or {}, ids or {}
+    partes = []
+    for slug, df in raw.items():
+        if df is None or df.empty:
+            continue
+        parte = df[["date", "value"]].copy()
+        parte.insert(0, "serie", etiquetas.get(slug, slug))
+        parte.insert(1, "id_ceic", ids.get(slug))
+        partes.append(parte)
+    if not partes:
+        return pd.DataFrame(columns=["serie", "id_ceic", "date", "value"])
+    return pd.concat(partes, ignore_index=True).sort_values(["serie", "date"])
 
 
 def etiqueta_frecuencia(dias_mediana):

@@ -410,7 +410,8 @@ class MultiHorizonForecaster:
     # ------------------------------------------------------------------
     def plot_fan_chart(self, dataset, date_col="date", history_periods=None,
                         color_actual="#B33A0F", color_forecast="#FF5315",
-                        color_band="rgba(255, 83, 21, 0.15)", color_grid="#eee"):
+                        color_band="rgba(255, 83, 21, 0.15)", color_grid="#eee",
+                        labels=None, y_title=None):
         """
         Gráfico "fan chart": histórico real + la trayectoria proyectada
         completa (h=1..max_horizon), con el intervalo ensanchándose a
@@ -421,7 +422,17 @@ class MultiHorizonForecaster:
         history_periods: recorta el histórico a los últimos N períodos
         (con datos semanales, 500+ puntos aplastan visualmente la parte
         proyectada; ~104 semanas = 2 años se lee bien).
+
+        labels / y_title: textos del gráfico en el idioma activo. Se pasan
+        desde la app en vez de resolverse acá para que este módulo siga
+        sin depender de Streamlit. Samuel lo marcó en la reunión: la
+        interfaz cambiaba a portugués pero la leyenda y el eje del
+        gráfico seguían en español.
         """
+        labels = {**{"serie": self.series_label,
+                     "rango": "Rango de confianza (95%)",
+                     "proyeccion": "Proyección"},
+                  **(labels or {})}
         import plotly.graph_objects as go
 
         path = self.forecast_path()
@@ -439,7 +450,7 @@ class MultiHorizonForecaster:
         # Histórico real
         fig.add_trace(go.Scatter(
             x=pd.to_datetime(hist[date_col]), y=hist[self.target_col],
-            mode="lines", name=self.series_label,
+            mode="lines", name=labels["serie"],
             line=dict(color=color_actual, width=2.5),
         ))
 
@@ -451,14 +462,14 @@ class MultiHorizonForecaster:
         )
         fig.add_trace(go.Scatter(
             x=band_x, y=band_y, fill="toself", fillcolor=color_band,
-            line=dict(color="rgba(0,0,0,0)"), name="Rango de confianza (95%)",
+            line=dict(color="rgba(0,0,0,0)"), name=labels["rango"],
             hoverinfo="skip",
         ))
 
         # Línea central de la proyección
         fig.add_trace(go.Scatter(
             x=[last_date] + future_dates, y=[last_value] + path["forecast"].tolist(),
-            mode="lines+markers+text", name="Proyección",
+            mode="lines+markers+text", name=labels["proyeccion"],
             line=dict(color=color_forecast, width=3, dash="dot"),
             marker=dict(size=10, color=color_forecast, symbol="diamond"),
             text=[""] + [f"{v:.1f}%" for v in path["forecast"]],
@@ -466,7 +477,7 @@ class MultiHorizonForecaster:
         ))
 
         fig.update_layout(
-            xaxis_title=None, yaxis_title=self.y_title,
+            xaxis_title=None, yaxis_title=y_title or self.y_title,
             hovermode="x unified", plot_bgcolor="white", paper_bgcolor="white",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(t=10),
@@ -477,7 +488,7 @@ class MultiHorizonForecaster:
 
     def plot_backtest_bars(self, backtest_detail_df, date_col="date",
                             color_actual="#B33A0F", color_forecast="#FF5315",
-                            color_grid="#eee"):
+                            color_grid="#eee", labels=None, y_title=None):
         """
         Barras pareadas real vs. proyección, período a período, con el
         detalle de un horizonte del backtest. Más concreto para un
@@ -485,17 +496,20 @@ class MultiHorizonForecaster:
         """
         import plotly.graph_objects as go
 
+        labels = {**{"real": "Real", "modelo": "Proyección del modelo"},
+                  **(labels or {})}
+
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=backtest_detail_df[date_col], y=backtest_detail_df["actual"],
-            name="Real", marker_color=color_actual,
+            name=labels["real"], marker_color=color_actual,
         ))
         fig.add_trace(go.Bar(
             x=backtest_detail_df[date_col], y=backtest_detail_df["model"],
-            name="Proyección del modelo", marker_color=color_forecast,
+            name=labels["modelo"], marker_color=color_forecast,
         ))
         fig.update_layout(
-            barmode="group", title=None, yaxis_title=self.y_title,
+            barmode="group", title=None, yaxis_title=y_title or self.y_title,
             plot_bgcolor="white", paper_bgcolor="white",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(t=10),

@@ -6,12 +6,39 @@ usuario elija un indicador por nombre ("PIB de Colombia") sin saber qué
 es un series_id de CEIC.
 
 MODOS
+  nowcast        -> estimar el período EN CURSO antes de que salga el
+                    dato oficial.
   auto_select    -> el orquestador elige el indicador principal probando
-                    candidatos, y luego evalúa una lista de series
-                    adicionales para complementar. Es el caso del PIB.
-  multi_feature  -> los independientes ya están definidos y se usan
-                    todos juntos en un mismo modelo. Es el caso del
-                    acero en China.
+                    candidatos, y luego TAMIZA una lista de series
+                    adicionales. Es el caso del PIB de Colombia.
+  fixed_features -> los predictores ya están definidos por el equipo de
+                    research y entran todos al modelo. El tamizaje se
+                    sigue calculando, pero como DIAGNÓSTICO (se muestra
+                    qué aporta cada uno), no como filtro que descarta.
+  multi_feature  -> predictores fijos sobre grilla de alta frecuencia,
+                    con alineación de series de distinta frecuencia. Es
+                    el caso del acero en China.
+
+CAMBIO (ago-2026, reunión con Nicolás y Samuel)
+------------------------------------------------
+Las tablas que mandó Samuel se estaban leyendo mal. Cada tabla NO es una
+lista de insumos para el PIB: el título de cada tabla ES la serie a
+proyectar, y las series de abajo son los predictores de ESA serie. Sus
+palabras: "yo no te mandé esas series para pronosticar PIB, las que te
+mandé eran para pronosticar las otras cosas".
+
+Consecuencia: cada tabla se vuelve una entrada propia del catálogo
+(inflación, ventas de vehículos, exportaciones — para Colombia y para
+Brasil), en modo fixed_features. Meter las 18 al PIB era, además de una
+mala lectura, parte de la razón por la que el tamizaje descartaba casi
+todo: series elegidas para explicar la inflación mensual no tienen por
+qué explicar el PIB trimestral.
+
+Segundo cambio del mismo comentario de Nicolás: "no sé por qué la
+descartas si el p-valor es de 0.009". En modo fixed_features el modelo
+YA NO descarta por su cuenta — usa las variables que definió research y
+muestra el aporte de cada una. El filtro estricto sigue disponible como
+opción, pero deja de ser el comportamiento por defecto.
 
 TRANSFORMACIONES (campo "transform") — cómo se lleva cada serie a algo
 modelable. Elegir mal esto es la forma más fácil de sacar un R² alto que
@@ -29,33 +56,52 @@ no significa nada:
   "log_change"   diferencia de logaritmos sobre N períodos base. Precios
                  de alta frecuencia (acero).
 
+Ojo con las series cuyo nombre en la tabla de Samuel ya dice "a/a": van
+como "already_yoy". La tabla de extracción del dashboard muestra la
+transformación aplicada y el último valor de cada serie justamente para
+poder cachar de un vistazo si alguna quedó mal clasificada (una serie
+"already_yoy" que en realidad llega en niveles se nota al instante:
+último valor de 5.400 en vez de 5,4).
+
 LAGS (campo "lag_meses") — el rezago que reportó Samuel: con cuántos
-meses de anticipación esa serie mueve al objetivo. No es decorativo:
-decide en qué horizontes se prueba cada candidato, lo que reduce el
-número de pruebas y baja el riesgo de encontrar "significancia" por puro
-azar. None = contemporáneo (se prueba en todos los horizontes).
+meses de anticipación esa serie mueve al objetivo. Decide en qué
+horizontes se prueba cada candidato en el modo auto_select y ordena la
+tabla de diagnóstico en fixed_features. None = contemporáneo.
 
 Para agregar un país/indicador nuevo alcanza con agregar una entrada acá.
 """
 
+# ----------------------------------------------------------------------
+# Predictores reutilizados en más de una entrada. Se definen una sola vez
+# para que un cambio de ID o de transformación no haya que hacerlo en
+# tres lugares y quedarse con dos versiones distintas.
+# ----------------------------------------------------------------------
+BRENT = {"label": "Precio del Brent", "slug": "brent",
+         "series_id": "42651501", "transform": "yoy", "lag_meses": (1, 2)}
+CAFE = {"label": "Precio del café", "slug": "cafe",
+        "series_id": "508345627", "transform": "yoy", "lag_meses": (3, 4)}
+PROD_IND_EEUU = {"label": "Producción industrial EEUU", "slug": "prod_ind_eeuu",
+                 "series_id": "465764897", "transform": "yoy", "lag_meses": (4, 6)}
+CONFIANZA_EEUU = {"label": "Confianza del consumidor EEUU", "slug": "confianza_eeuu",
+                  "series_id": "41044301", "transform": "level", "lag_meses": (4, 6)}
+
+
 TARGET_CATALOG = {
     # ==================================================================
-    # 0 — Nowcast del PIB (el caso con mejores resultados reales)
+    # 0 — Nowcast del PIB de Colombia (el caso con mejores resultados)
     # ==================================================================
-    # Con walk-forward sobre 49 trimestres reales de Colombia, estimar el
-    # trimestre EN CURSO con los meses de ISE ya publicados da:
+    # Con walk-forward sobre 49 trimestres reales, estimar el trimestre
+    # EN CURSO con los meses de ISE ya publicados da:
     #     1 mes  -> error típico 1.51 pp  (63% mejor que el último PIB)
     #     2 meses-> error típico 1.01 pp  (76% mejor)
     #     3 meses-> error típico 0.43 pp  (90% mejor)
-    # Contra eso, proyectar hacia adelante (entrada "pib_colombia") no le
-    # gana de forma relevante ni a repetir el crecimiento actual.
     #
-    # El valor no es solo la precisión: es la precisión multiplicada por
-    # el tiempo que se gana. El pipeline mide esa ventaja de calendario
-    # contra los datos reales en vez de suponerla.
+    # Nicolás lo dejó como el caso estándar de la demo: "me gustó mucho
+    # más el primero, yo dejaría este como el modelo estándar".
     # ==================================================================
     "nowcast_pib_colombia": {
         "label": "PIB de Colombia — trimestre en curso",
+        "grupo": "Colombia",
         "mode": "nowcast",
         "country_id": "3070",
         "country_name": "Colombia",
@@ -81,13 +127,12 @@ TARGET_CATALOG = {
     # ==================================================================
     "pib_colombia": {
         "label": "PIB de Colombia — proyección a futuro",
+        "grupo": "Colombia",
         "mode": "auto_select",
         "country_id": "3070",           # confirmado empíricamente
         "country_name": "Colombia",
         "target_keyword": "GDP real",
         "target_frequency": "Q",
-        # ID fijo: si está, no se busca nada. La búsqueda de la serie
-        # objetivo + las 4 de candidatos era buena parte de la espera.
         "target_series_id": "403709667",   # PIB trimestral real, sa
         "base_frequency": "Q",
         "default_start_date": "2005-01-01",
@@ -96,15 +141,8 @@ TARGET_CATALOG = {
         "horizons": [1, 2, 3, 4],       # Nicolás pidió mínimo 4 trimestres
         "max_horizon": 4,
 
-        # IDs ya confirmados en corridas reales, por si se quiere saltar
-        # la búsqueda: PIB sa = 403709667, PIB nsa = 403709817,
-        # ISE sa = 403710187, ISE nsa = 403710177.
-        # OJO con early_stop_r2: se calibró en 0.90 cuando el modelo era
-        # contemporáneo (PIB(t) ~ ISE(t)) y daba R²≈0.99. En el modelo
-        # actual, que proyecta PIB(t+h) desde lo conocido en t, el R²
-        # real ronda 0.46 — el umbral NUNCA se alcanza y por eso siempre
-        # se probaban los 4 candidatos. Con el ID del ISE fijo el punto
-        # queda resuelto: se usa directo y no se prueba nada.
+        # IDs ya confirmados en corridas reales: PIB sa = 403709667,
+        # PIB nsa = 403709817, ISE sa = 403710187, ISE nsa = 403710177.
         "candidate_indicators": [
             {"label": "Índice de Seguimiento a la Economía (ISE)",
              "keyword": "Economic Activity Index", "series_id": "403710187"},
@@ -114,96 +152,268 @@ TARGET_CATALOG = {
         ],
 
         # ------------------------------------------------------------------
-        # Series adicionales para complementar el pronóstico (lo que pidió
-        # Nicolás; los IDs y rezagos los mandó Samuel).
+        # Series adicionales para complementar el pronóstico.
         #
-        # Samuel las organizó en tres bloques —inflación, ventas de
-        # vehículos y exportaciones— cada uno con su cabeza de bloque y
-        # sus propios líderes. Acá TODAS entran como candidatas a
-        # predictor del PIB: las cabezas de bloque son indicadores
-        # mensuales de actividad y precios por derecho propio, y sus
-        # líderes son series de más alta frecuencia que ya vienen
-        # rezagadas respecto al ciclo.
+        # OJO (ago-2026): esta lista YA NO son "las tablas de Samuel".
+        # Esas eran para otros objetivos y ahora viven en sus propias
+        # entradas. Lo que queda acá es un puñado de series de actividad
+        # y precios que sí tiene sentido probar como líderes del PIB
+        # trimestral, y que se siguen tamizando de a una.
         #
-        # NO se meten todas juntas al modelo: 18 candidatas contra ~80
-        # observaciones trimestrales sería sobreajuste garantizado. Se
-        # prueban de a una (ver gdp_feature_screening.py) y solo pasan
-        # las que son significativas Y mejoran el backtest walk-forward
-        # — el mismo doble filtro que ya reprobó al petróleo.
-        #
-        # bloque: solo para agrupar en la tabla que se le muestra al
-        # cliente; no afecta el modelo.
+        # No se meten todas juntas al modelo: con ~80 observaciones
+        # trimestrales, más de 5-8 predictores es sobreajuste garantizado.
         # ------------------------------------------------------------------
         "candidate_features": [
-            # --- bloque inflación ---
-            {"label": "Inflación a/a", "slug": "inflacion", "bloque": "Inflación",
+            {"label": "Inflación a/a", "slug": "inflacion", "bloque": "Precios",
              "series_id": "412380767", "transform": "already_yoy", "lag_meses": None},
-            {"label": "Índice de precios al productor", "slug": "ipp", "bloque": "Inflación",
-             "series_id": "365745947", "transform": "yoy", "lag_meses": (2, 6)},
-            {"label": "Precio de la gasolina", "slug": "gasolina", "bloque": "Inflación",
-             "series_id": "507666517", "transform": "yoy", "lag_meses": (1, 1)},
-            {"label": "Precio de la electricidad", "slug": "electricidad", "bloque": "Inflación",
-             "series_id": "464864977", "transform": "yoy", "lag_meses": (1, 1)},
-            {"label": "Expectativas de inflación", "slug": "expectativas", "bloque": "Inflación",
-             "series_id": "206940602", "transform": "level", "lag_meses": None},
-
-            # --- bloque ventas de vehículos ---
-            {"label": "Ventas de vehículos", "slug": "vehiculos", "bloque": "Vehículos",
-             "series_id": "449020167", "transform": "yoy", "lag_meses": None},
-            # OJO: 234405303 ya se probó como líder del PIB en
-            # test_leading_indicators.py y NO pasó. Se deja porque acá se
-            # evalúa con otra especificación y otros horizontes, pero si
-            # vuelve a reprobar, no insistir.
-            {"label": "Índice de confianza del consumidor", "slug": "confianza", "bloque": "Vehículos",
-             "series_id": "234405303", "transform": "level", "lag_meses": (2, 4)},
-            {"label": "Cartera de crédito al consumidor", "slug": "cartera_consumo", "bloque": "Vehículos",
-             "series_id": "245597403", "transform": "already_yoy", "lag_meses": None},
-            {"label": "Tasa de interés", "slug": "tasa_interes", "bloque": "Vehículos",
+            {"label": "Tasa de interés", "slug": "tasa_interes", "bloque": "Precios",
              "series_id": "114129708", "transform": "level", "lag_meses": (4, 6)},
-
-            # --- bloque exportaciones ---
-            {"label": "Exportaciones totales", "slug": "exportaciones", "bloque": "Exportaciones",
-             "series_id": "113861408", "transform": "yoy", "lag_meses": None},
-            {"label": "Producción de petróleo", "slug": "prod_petroleo", "bloque": "Exportaciones",
-             "series_id": "561816207", "transform": "yoy", "lag_meses": None},
-            {"label": "Precio del Brent", "slug": "brent", "bloque": "Exportaciones",
-             "series_id": "42651501", "transform": "yoy", "lag_meses": (1, 2)},
-            {"label": "Precio del carbón", "slug": "carbon", "bloque": "Exportaciones",
-             "series_id": "508347897", "transform": "yoy", "lag_meses": (1, 2)},
-            {"label": "Precio del café", "slug": "cafe", "bloque": "Exportaciones",
-             "series_id": "508345627", "transform": "yoy", "lag_meses": (3, 4)},
-            {"label": "Tasa de cambio real", "slug": "tcr", "bloque": "Exportaciones",
-             "series_id": "367504067", "transform": "yoy", "lag_meses": (1, 6)},
-            {"label": "Producción industrial EEUU", "slug": "prod_ind_eeuu", "bloque": "Exportaciones",
-             "series_id": "465764897", "transform": "yoy", "lag_meses": (4, 6)},
-            {"label": "Confianza del consumidor EEUU", "slug": "confianza_eeuu", "bloque": "Exportaciones",
-             "series_id": "41044301", "transform": "level", "lag_meses": (4, 6)},
-
-            # --- transversal (aparece en dos bloques de Samuel) ---
-            {"label": "Tasa de cambio TRM", "slug": "trm", "bloque": "Transversal",
+            {"label": "Tasa de cambio TRM", "slug": "trm", "bloque": "Precios",
              "series_id": "857382067", "transform": "yoy", "lag_meses": (4, 6)},
+            {"label": "Índice de confianza del consumidor", "slug": "confianza",
+             "bloque": "Demanda", "series_id": "234405303", "transform": "level",
+             "lag_meses": (2, 4)},
+            {"label": "Cartera de crédito al consumidor", "slug": "cartera_consumo",
+             "bloque": "Demanda", "series_id": "245597403", "transform": "already_yoy",
+             "lag_meses": None},
+            {"label": "Ventas de vehículos", "slug": "vehiculos", "bloque": "Demanda",
+             "series_id": "449020167", "transform": "yoy", "lag_meses": None},
+            {"label": "Exportaciones totales", "slug": "exportaciones",
+             "bloque": "Sector externo", "series_id": "113861408", "transform": "yoy",
+             "lag_meses": None},
+            dict(BRENT, bloque="Sector externo"),
+            dict(PROD_IND_EEUU, bloque="Sector externo"),
         ],
     },
 
     # ==================================================================
-    # 2 — Precio del acero en China (commodity de alta frecuencia)
+    # 2 — Inflación de Colombia  (tabla 1 de Samuel)
     # ==================================================================
-    # CAMBIO (ago-2026, pedido de Nicolás): el objetivo pasa a ser el
-    # precio de liquidación diario del rebar en la Bolsa de Futuros de
-    # Shanghái. La serie anterior (36 City Avg) resultó ser MENSUAL, no
-    # diaria — sobre una grilla semanal el objetivo solo tenía dato 1 de
-    # cada ~4 semanas, así que el modelo venía corriendo con una fracción
-    # de las observaciones que aparentaba tener.
+    "inflacion_colombia": {
+        "label": "Inflación de Colombia",
+        "grupo": "Colombia",
+        "mode": "fixed_features",
+        "country_id": "3070",
+        "country_name": "Colombia",
+        "base_frequency": "M",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Variación interanual (%)",
+        "period_label": "mes",
+        # Cuatro horizontes, hasta 6 meses: es hasta donde llegan los
+        # rezagos que reportó Samuel. Más allá de eso el trabajo lo hace
+        # el término autorregresivo, no las series líderes.
+        "horizons": [1, 2, 3, 6],
+        "max_horizon": 6,
+        "target": {
+            "label": "Inflación a/a", "slug": "inflacion",
+            "series_id": "412380767", "transform": "already_yoy",
+        },
+        "features": [
+            {"label": "Índice de precios al productor", "slug": "ipp",
+             "series_id": "365745947", "transform": "yoy", "lag_meses": (2, 6)},
+            {"label": "Tasa de cambio TRM", "slug": "trm",
+             "series_id": "857382067", "transform": "yoy", "lag_meses": (4, 6)},
+            {"label": "Precio de la gasolina", "slug": "gasolina",
+             "series_id": "507666517", "transform": "yoy", "lag_meses": (1, 1)},
+            {"label": "Precio de la electricidad", "slug": "electricidad",
+             "series_id": "464864977", "transform": "yoy", "lag_meses": (1, 1)},
+            {"label": "Expectativas de inflación", "slug": "expectativas",
+             "series_id": "206940602", "transform": "level", "lag_meses": None},
+        ],
+    },
+
+    # ==================================================================
+    # 3 — Ventas de vehículos en Colombia  (tabla 2 de Samuel)
+    # ==================================================================
+    "vehiculos_colombia": {
+        "label": "Ventas de vehículos en Colombia",
+        "grupo": "Colombia",
+        "mode": "fixed_features",
+        "country_id": "3070",
+        "country_name": "Colombia",
+        "base_frequency": "M",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Variación interanual (%)",
+        "period_label": "mes",
+        "horizons": [1, 2, 3, 6],
+        "max_horizon": 6,
+        "target": {
+            "label": "Ventas de vehículos", "slug": "vehiculos",
+            "series_id": "449020167", "transform": "yoy",
+        },
+        "features": [
+            {"label": "Índice de confianza del consumidor", "slug": "confianza",
+             "series_id": "234405303", "transform": "level", "lag_meses": (2, 4)},
+            {"label": "Tasa de cambio TRM", "slug": "trm",
+             "series_id": "857382067", "transform": "yoy", "lag_meses": (4, 6)},
+            {"label": "Cartera de crédito al consumidor", "slug": "cartera_consumo",
+             "series_id": "245597403", "transform": "already_yoy", "lag_meses": None},
+            {"label": "Tasa de interés", "slug": "tasa_interes",
+             "series_id": "114129708", "transform": "level", "lag_meses": (4, 6)},
+        ],
+    },
+
+    # ==================================================================
+    # 4 — Exportaciones de Colombia  (tabla 3 de Samuel)
+    # ==================================================================
+    "exportaciones_colombia": {
+        "label": "Exportaciones de Colombia",
+        "grupo": "Colombia",
+        "mode": "fixed_features",
+        "country_id": "3070",
+        "country_name": "Colombia",
+        "base_frequency": "M",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Variación interanual (%)",
+        "period_label": "mes",
+        "horizons": [1, 2, 3, 6],
+        "max_horizon": 6,
+        "target": {
+            "label": "Exportaciones totales", "slug": "exportaciones",
+            "series_id": "113861408", "transform": "yoy",
+        },
+        "features": [
+            {"label": "Producción de petróleo", "slug": "prod_petroleo",
+             "series_id": "561816207", "transform": "yoy", "lag_meses": None},
+            dict(BRENT),
+            {"label": "Precio del carbón", "slug": "carbon",
+             "series_id": "508347897", "transform": "yoy", "lag_meses": (1, 2)},
+            dict(CAFE),
+            {"label": "Tasa de cambio real", "slug": "tcr",
+             "series_id": "367504067", "transform": "yoy", "lag_meses": (1, 6)},
+            dict(PROD_IND_EEUU),
+            dict(CONFIANZA_EEUU),
+        ],
+    },
+
+    # ==================================================================
+    # 5 — PIB de Brasil  (tabla 1 del correo de Brasil)
+    # ==================================================================
+    # Nicolás: "así como estamos teniendo uno para Colombia, tener uno
+    # para Brasil; con eso ellos, cuando lo tengan en Brasil y lo muestren
+    # en portugués, digan: yo estoy creando ese de Brasil".
     #
-    # Grilla SEMANAL con horizonte hasta 26 semanas (~6 meses), que es lo
-    # que pidió Nicolás. Consecuencia estadística: los targets acumulados
-    # se solapan (la ventana de 26 semanas de una fila comparte 25 con la
-    # siguiente), así que los errores estándar OLS clásicos salen
-    # demasiado angostos. Por eso el modelo usa errores HAC/Newey-West en
+    # country_id de Brasil: no se resolvió todavía, pero no hace falta —
+    # todas las series traen ID fijo, así que no se ejecuta ninguna
+    # búsqueda por keyword y el filtro de país nunca se usa.
+    # ==================================================================
+    "pib_brasil": {
+        "label": "PIB de Brasil",
+        "grupo": "Brasil",
+        "mode": "fixed_features",
+        "country_id": None,
+        "country_name": "Brazil",
+        "base_frequency": "Q",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Crecimiento interanual (%)",
+        "period_label": "trimestre",
+        "horizons": [1, 2, 3, 4],
+        "max_horizon": 4,
+        "target": {
+            "label": "PIB de Brasil a/a", "slug": "pib_br",
+            "series_id": "366987777", "transform": "already_yoy",
+        },
+        # Seis predictores mensuales de actividad, todos contemporáneos.
+        # Sobre ~80 trimestres eso ya es mucho, y varios se mueven casi
+        # igual entre sí: el pipeline aplica un filtro de colinealidad y
+        # reporta cuáles quedaron dentro y cuáles salieron por duplicadas.
+        "features": [
+            {"label": "Índice de actividad económica", "slug": "actividad_br",
+             "series_id": "544340267", "transform": "yoy", "lag_meses": None},
+            {"label": "Consumo de electricidad", "slug": "electricidad_br",
+             "series_id": "1304601", "transform": "yoy", "lag_meses": None},
+            {"label": "Producción industrial", "slug": "prod_ind_br",
+             "series_id": "505806137", "transform": "yoy", "lag_meses": None},
+            {"label": "Ventas industriales", "slug": "ventas_ind_br",
+             "series_id": "356295387", "transform": "yoy", "lag_meses": None},
+            {"label": "Ventas retail", "slug": "retail_br",
+             "series_id": "505767847", "transform": "yoy", "lag_meses": None},
+            {"label": "Confianza del consumidor", "slug": "confianza_br",
+             "series_id": "373694597", "transform": "level", "lag_meses": None},
+        ],
+    },
+
+    # ==================================================================
+    # 6 — Inflación de Brasil  (tabla 2 del correo de Brasil)
+    # ==================================================================
+    "inflacion_brasil": {
+        "label": "Inflación de Brasil",
+        "grupo": "Brasil",
+        "mode": "fixed_features",
+        "country_id": None,
+        "country_name": "Brazil",
+        "base_frequency": "M",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Variación interanual (%)",
+        "period_label": "mes",
+        "horizons": [1, 2, 3, 6],
+        "max_horizon": 6,
+        "target": {
+            "label": "Inflación a/a", "slug": "inflacion_br",
+            "series_id": "273491403", "transform": "already_yoy",
+        },
+        "features": [
+            {"label": "Índice de precios al productor", "slug": "ipp_br",
+             "series_id": "414008647", "transform": "yoy", "lag_meses": (2, 6)},
+            {"label": "Tasa de cambio", "slug": "fx_br",
+             "series_id": "1330801", "transform": "yoy", "lag_meses": (4, 6)},
+            # Semanal: to_base_frequency la promedia al mes.
+            {"label": "Precio de la gasolina", "slug": "gasolina_br",
+             "series_id": "255783202", "transform": "yoy", "lag_meses": (1, 1)},
+            {"label": "Precio de la electricidad", "slug": "electricidad_precio_br",
+             "series_id": "478098817", "transform": "yoy", "lag_meses": (1, 1)},
+        ],
+    },
+
+    # ==================================================================
+    # 7 — Exportaciones de Brasil  (tabla 3 del correo de Brasil)
+    # ==================================================================
+    "exportaciones_brasil": {
+        "label": "Exportaciones de Brasil",
+        "grupo": "Brasil",
+        "mode": "fixed_features",
+        "country_id": None,
+        "country_name": "Brazil",
+        "base_frequency": "M",
+        "default_start_date": "2005-01-01",
+        "unit_label": "Variación interanual (%)",
+        "period_label": "mes",
+        "horizons": [1, 2, 3, 6],
+        "max_horizon": 6,
+        "target": {
+            "label": "Exportaciones totales", "slug": "exportaciones_br",
+            "series_id": "1380001", "transform": "yoy",
+        },
+        "features": [
+            {"label": "Producción de petróleo", "slug": "prod_petroleo_br",
+             "series_id": "229192102", "transform": "yoy", "lag_meses": None},
+            dict(BRENT),
+            {"label": "Producción de soya", "slug": "soya_br",
+             "series_id": "228948202", "transform": "yoy", "lag_meses": None},
+            dict(CAFE),
+            {"label": "Tasa de cambio real", "slug": "tcr_br",
+             "series_id": "227507002", "transform": "yoy", "lag_meses": (1, 6)},
+            dict(PROD_IND_EEUU),
+            dict(CONFIANZA_EEUU),
+            {"label": "Confianza del consumidor China", "slug": "confianza_china",
+             "series_id": "5198401", "transform": "level", "lag_meses": (4, 6)},
+            {"label": "Ventas retail China", "slug": "retail_china",
+             "series_id": "5190601", "transform": "yoy", "lag_meses": (2, 4)},
+        ],
+    },
+
+    # ==================================================================
+    # 8 — Precio del acero en China (commodity de alta frecuencia)
+    # ==================================================================
+    # Grilla SEMANAL con horizonte hasta 26 semanas (~6 meses). Los
+    # targets acumulados se solapan (la ventana de 26 semanas de una fila
+    # comparte 25 con la siguiente), así que los errores estándar OLS
+    # clásicos salen demasiado angostos: el modelo usa HAC/Newey-West en
     # los horizontes largos — ver multi_horizon_forecast.py.
     # ==================================================================
     "acero_china": {
         "label": "Precio del acero en China",
+        "grupo": "Commodities",
         "mode": "multi_feature",
         "country_id": None,             # pendiente confirmar geo ID de China
         "country_name": "China",
@@ -211,8 +421,6 @@ TARGET_CATALOG = {
         "default_start_date": "2015-01-01",
         "unit_label": "Variación % del precio",
         "period_label": "semana",
-        # Se ajustan todos los horizontes 1..26, pero al cliente se le
-        # muestran los hitos mensuales: así piensa el negocio.
         "horizons": [4, 9, 13, 17, 22, 26],
         "max_horizon": 26,
 
@@ -254,15 +462,8 @@ TARGET_CATALOG = {
              "search_keyword": "Steel Inventory Large Medium Enterprise Steel Product",
              "series_id": "384035557",  # Ton th, CISA
              # OJO: CEIC la marca "Daily, Everyday" pero NO llega diaria.
-             # Los dos últimos datos son 20-jul y 31-jul-2026, y en total
-             # tiene 342 observaciones -> publicación decadal (cada ~10
-             # días). En la grilla semanal eso significa que ~2 de cada 3
-             # semanas arrastran el último dato publicado por ffill, y su
-             # variación se mueve a saltos. No invalida el feature (es lo
-             # que un analista tendría en pantalla ese día), pero explica
-             # por qué puede salir menos significativo que las series
-             # realmente diarias. El pipeline verifica el espaciado real
-             # de las 6 series y lo reporta.
+             # Publicación decadal (cada ~10 días): en la grilla semanal
+             # ~2 de cada 3 semanas arrastran el último dato por ffill.
              "transform": "log_change"},
 
             {"label": "Tasa de operación de altos hornos",
@@ -286,7 +487,22 @@ TARGET_CATALOG = {
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-def candidatos_para_horizonte(target_config, horizonte, meses_por_periodo=3):
+def meses_por_periodo(target_config):
+    """Cuántos meses cubre un período de la frecuencia base del modelo."""
+    return {"Q": 3, "M": 1, "W": 0.25}.get(target_config.get("base_frequency", "Q"), 3)
+
+
+def features_del_modelo(target_config):
+    """
+    Los predictores de una entrada, sin que el llamador tenga que saber
+    si el modo los guarda en "features" (fijos) o en "candidate_features"
+    (a tamizar).
+    """
+    return list(target_config.get("candidate_features")
+                or target_config.get("features") or [])
+
+
+def candidatos_para_horizonte(target_config, horizonte, meses_por_periodo_=None):
     """
     Candidatos cuyo rezago reportado alcanza a cubrir ese horizonte.
 
@@ -297,23 +513,21 @@ def candidatos_para_horizonte(target_config, horizonte, meses_por_periodo=3):
 
     Ojo con la versión anterior de esta regla, que exigía
     lag_min <= meses <= lag_max: con el PIB trimestral los horizontes
-    caen en 3, 6, 9 y 12 meses, así que las series de rezago corto que
-    mandó Samuel —gasolina y electricidad (1 mes), Brent y carbón (1-2
-    meses)— no calzaban con NINGÚN horizonte y quedaban fuera sin que
-    nadie se enterara. Son líderes de rezago corto: su lugar natural es
-    el horizonte más cercano, no el descarte. Samuel las eligió pensando
-    en objetivos MENSUALES (inflación, vehículos, exportaciones), y al
-    reusarlas contra un PIB trimestral hay que traducir la grilla, no
-    ignorarlas.
+    caen en 3, 6, 9 y 12 meses, así que las series de rezago corto
+    —gasolina y electricidad (1 mes), Brent y carbón (1-2 meses)— no
+    calzaban con NINGÚN horizonte y quedaban fuera sin que nadie se
+    enterara. Son líderes de rezago corto: su lugar natural es el
+    horizonte más cercano, no el descarte.
 
-    Restringir por rezago igual importa: probar 18 candidatas en 4
-    horizontes son 72 pruebas, y al 5% de significancia unas 3-4 saldrían
-    "significativas" por puro azar.
+    meses_por_periodo_ ahora sale de la frecuencia base de la entrada
+    (3 meses en trimestral, 1 en mensual). Con los objetivos mensuales de
+    Samuel, dejarlo fijo en 3 habría vuelto a desalinear la grilla.
     """
-    desde = (horizonte - 1) * meses_por_periodo
-    hasta = horizonte * meses_por_periodo
+    mpp = meses_por_periodo_ or meses_por_periodo(target_config)
+    desde = (horizonte - 1) * mpp
+    hasta = horizonte * mpp
     out = []
-    for f in target_config.get("candidate_features", []):
+    for f in features_del_modelo(target_config):
         lag = f.get("lag_meses")
         if lag is None or (lag[0] <= hasta and lag[1] > desde):
             out.append(f)
@@ -328,3 +542,15 @@ def missing_series_ids(target_config):
     specs += list(target_config.get("features", []))
     specs += list(target_config.get("candidate_features", []))
     return [s["slug"] for s in specs if not s.get("series_id")]
+
+
+def entradas_por_grupo():
+    """
+    {grupo: [claves]} para agrupar el selector de la app. Con 9 entradas
+    una lista plana ya se lee mal — y con Brasil adentro, el país es lo
+    primero que busca un comercial.
+    """
+    grupos = {}
+    for clave, cfg in TARGET_CATALOG.items():
+        grupos.setdefault(cfg.get("grupo", "Otros"), []).append(clave)
+    return grupos

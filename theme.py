@@ -44,6 +44,40 @@ def apply_custom_theme() -> None:
 
         .stApp {{ background-color: {BRAND["bg_page"]}; }}
 
+        /* ---------- Modo oscuro del navegador ----------
+           Samuel se perdió media demo porque tiene el equipo en dark
+           mode: Streamlit le ponía la letra en blanco sobre nuestras
+           tarjetas blancas y varios controles quedaban invisibles (no
+           veía ni el expander de "Configuración avanzada"). El fondo lo
+           fija .stApp, pero el COLOR DE TEXTO lo decide el tema activo,
+           y ahí es donde se rompía.
+
+           .streamlit/config.toml ya fija base="light" y resuelve el
+           caso en la app publicada. Esto es el cinturón además de los
+           tirantes: si alguien corre el proyecto sin ese archivo, la
+           pantalla sigue siendo legible. */
+        .stApp, .stApp p, .stApp li, .stApp label, .stApp span,
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stWidgetLabel"],
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] summary p {{
+            color: {BRAND["text"]};
+        }}
+        [data-testid="stExpander"] details {{
+            background-color: {BRAND["bg_card"]};
+            border-color: {BRAND["border"]} !important;
+        }}
+        .stApp caption, [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p {{
+            color: {BRAND["text_secondary"]} !important;
+        }}
+        /* Tablas y selectores: fondo claro explícito, no heredado */
+        [data-testid="stDataFrame"], [data-testid="stTable"],
+        [data-baseweb="select"] > div, .stDateInput input, .stTextInput input {{
+            background-color: {BRAND["bg_card"]};
+            color: {BRAND["text"]};
+        }}
+
         /* ---------- Headings ---------- */
         h1, h2, h3 {{ color: {BRAND["text"]} !important; font-weight: 800 !important; letter-spacing: -0.02em; }}
         h1 {{ border-bottom: 3px solid {BRAND["primary"]}; padding-bottom: 0.5rem; display: inline-block; }}

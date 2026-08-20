@@ -45,7 +45,7 @@ cumulative_target y con paso semanal.
 import numpy as np
 import pandas as pd
 
-from gdp_data_manager import GDPForecastDataManager, resumen_extraccion
+from gdp_data_manager import GDPForecastDataManager, series_largas, resumen_extraccion
 from multi_horizon_forecast import MultiHorizonForecaster
 
 BASE_FREQ = "W-FRI"          # grilla semanal, cierre viernes
@@ -217,7 +217,11 @@ def build_steel_dataset(manager, resolved, target_config, start_date=DEFAULT_STA
 
     dataset = dataset.dropna().reset_index(drop=True)
     report(f"Dataset final: {len(dataset)} semanas con todas las variables completas.")
-    return levels, dataset, feature_cols, auditoria
+    # 'raw' se devuelve además de 'levels' porque el botón de descarga
+    # tiene que entregar el dato tal como llegó de CEIC, no la versión ya
+    # alineada a semana por nosotros. Nicolás lo pidió mirando justo esta
+    # pantalla: "que sea posible descargar toda la data".
+    return levels, dataset, feature_cols, auditoria, raw
 
 
 # ----------------------------------------------------------------------
@@ -251,7 +255,7 @@ def run_steel_forecast(ceic_client, target_config, start_date=DEFAULT_START_DATE
     resolved = resolve_series(manager, target_config, progress=report)
     target_slug = target_config["target"]["slug"]
 
-    levels, dataset, feature_cols, auditoria = build_steel_dataset(
+    levels, dataset, feature_cols, auditoria, raw = build_steel_dataset(
         manager, resolved, target_config, start_date=start_date, progress=report
     )
 
@@ -322,6 +326,16 @@ def run_steel_forecast(ceic_client, target_config, start_date=DEFAULT_START_DATE
         "significance_horizon": h_min,
         "labels": labels,
         "resolved_series": resolved,
+        # El dashboard busca primero "tabla_extraccion" y cae a
+        # "auditoria_frecuencia" si no está. Se expone con los dos
+        # nombres para que los tres casos se rendericen por el mismo
+        # camino, sin ramas especiales en la app.
+        "tabla_extraccion": auditoria,
+        "series_crudas": series_largas(
+            raw,
+            {slug: info["label"] for slug, info in resolved.items()},
+            {slug: info.get("series_id") for slug, info in resolved.items()},
+        ),
     }
 
 
@@ -330,14 +344,26 @@ def run_steel_forecast(ceic_client, target_config, start_date=DEFAULT_START_DATE
 # ----------------------------------------------------------------------
 def plot_price_fan_chart(result, history_weeks=104,
                           color_actual="#B33A0F", color_forecast="#FF5315",
-                          color_band="rgba(255, 83, 21, 0.15)", color_grid="#eee"):
+                          color_band="rgba(255, 83, 21, 0.15)", color_grid="#eee",
+                          labels=None):
     """
     El gráfico que se le muestra al cliente: el precio del acero como lo
     conoce (en yuanes/tonelada), no una variación porcentual, con el
     abanico de proyección a 4 semanas. La banda se ensancha con el
     horizonte porque el intervalo es de predicción, no de la media.
+
+    labels: textos del gráfico en el idioma activo, pasados desde la app
+    (este módulo no debe importar Streamlit). Sin esto, la leyenda y el
+    eje se quedaban en español aunque la interfaz estuviera en portugués
+    — justo lo que marcó Samuel en la reunión.
     """
     import plotly.graph_objects as go
+
+    labels = {**{"precio_observado": "Precio observado",
+                 "rango": "Rango de confianza (95%)",
+                 "proyeccion": "Proyección",
+                 "eje": "Precio (unidad de la serie CEIC)"},
+              **(labels or {})}
 
     levels = result["levels"].tail(history_weeks)
     slug = result["target_slug"]
@@ -349,7 +375,7 @@ def plot_price_fan_chart(result, history_weeks=104,
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=pd.to_datetime(levels["date"]), y=levels[slug],
-        mode="lines", name="Precio observado",
+        mode="lines", name=labels["precio_observado"],
         line=dict(color=color_actual, width=2.5),
     ))
     fig.add_trace(go.Scatter(
@@ -357,16 +383,16 @@ def plot_price_fan_chart(result, history_weeks=104,
         y=([last_price] + pp["precio_upper"].tolist()
            + pp["precio_lower"].tolist()[::-1] + [last_price]),
         fill="toself", fillcolor=color_band, line=dict(color="rgba(0,0,0,0)"),
-        name="Rango de confianza (95%)", hoverinfo="skip",
+        name=labels["rango"], hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=[last_date] + future_dates, y=[last_price] + pp["precio"].tolist(),
-        mode="lines+markers", name="Proyección",
+        mode="lines+markers", name=labels["proyeccion"],
         line=dict(color=color_forecast, width=3, dash="dot"),
         marker=dict(size=9, color=color_forecast, symbol="diamond"),
     ))
     fig.update_layout(
-        xaxis_title=None, yaxis_title="Precio (unidad de la serie CEIC)",
+        xaxis_title=None, yaxis_title=labels["eje"],
         hovermode="x unified", plot_bgcolor="white", paper_bgcolor="white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(t=10),

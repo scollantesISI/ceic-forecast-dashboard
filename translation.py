@@ -378,6 +378,531 @@ TEXTS = {
 }
 
 
+# ======================================================================
+# Textos agregados en ago-2026 tras la reunión con Nicolás y Samuel
+# ----------------------------------------------------------------------
+# Samuel, mirando la app en portugués: "no traduce todo... hace falta
+# como los botones, la tabla; y los nombres de las series y ese eje
+# también están en español". Nicolás: "sería como revisar eso".
+#
+# Se agregan acá en un TEXTS.update() en vez de mezclarlos arriba para
+# que quede claro qué entró en esta tanda y sea fácil de revisar. Para el
+# helper t() no hay ninguna diferencia.
+# ======================================================================
+TEXTS.update({
+    # ---------- Selector y configuración ----------
+    "grupo_colombia": {"es": "Colombia", "pt": "Colômbia", "en": "Colombia"},
+    "grupo_brasil": {"es": "Brasil", "pt": "Brasil", "en": "Brazil"},
+    "grupo_commodities": {"es": "Commodities", "pt": "Commodities", "en": "Commodities"},
+    "grupo_otros": {"es": "Otros", "pt": "Outros", "en": "Other"},
+    "pais_region": {"es": "País o mercado", "pt": "País ou mercado", "en": "Country or market"},
+    "proyeccion_hasta": {
+        "es": "Proyección hasta {h} hacia adelante.",
+        "pt": "Projeção até {h} à frente.",
+        "en": "Projection up to {h} ahead.",
+    },
+    "caption_nowcast": {
+        "es": "Estima el trimestre en curso antes de que se publique el dato "
+              "oficial, con los meses de datos que ya salieron.",
+        "pt": "Estima o trimestre em curso antes da publicação do dado "
+              "oficial, com os meses de dados já divulgados.",
+        "en": "Estimates the current quarter before the official figure is "
+              "published, using the months of data already out.",
+    },
+    "config_avanzada": {
+        "es": "Configuración avanzada (opcional)",
+        "pt": "Configuração avançada (opcional)",
+        "en": "Advanced settings (optional)",
+    },
+    "caption_config_avanzada": {
+        "es": "Los valores por defecto ya funcionan — normalmente no hace falta tocar esto.",
+        "pt": "Os valores padrão já funcionam — normalmente não é preciso mexer aqui.",
+        "en": "The defaults already work — you normally don't need to change this.",
+    },
+    "usar_datos_desde": {"es": "Usar datos desde", "pt": "Usar dados desde", "en": "Use data from"},
+    "evaluar_series_adicionales": {
+        "es": "Evaluar las series adicionales para complementar el pronóstico",
+        "pt": "Avaliar as séries adicionais para complementar a previsão",
+        "en": "Evaluate the additional series to complement the forecast",
+    },
+    "help_evaluar_series": {
+        "es": "Prueba una por una las series de apoyo. Agrega tiempo a la corrida.",
+        "pt": "Testa uma a uma as séries de apoio. Aumenta o tempo da execução.",
+        "en": "Tests the supporting series one by one. Adds time to the run.",
+    },
+    "criterio_seleccion": {
+        "es": "Criterio para que una serie entre al modelo",
+        "pt": "Critério para uma série entrar no modelo",
+        "en": "Criterion for a series to enter the model",
+    },
+    "criterio_estricto": {
+        "es": "Estricto: significancia y mejora del backtest",
+        "pt": "Estrito: significância e melhoria do backtest",
+        "en": "Strict: significance and backtest improvement",
+    },
+    "criterio_significancia": {
+        "es": "Solo significancia estadística",
+        "pt": "Só significância estatística",
+        "en": "Statistical significance only",
+    },
+    "help_criterio": {
+        "es": "El criterio estricto es más conservador y descarta series que "
+              "sí son significativas. El otro las deja entrar.",
+        "pt": "O critério estrito é mais conservador e descarta séries que são "
+              "significativas. O outro as deixa entrar.",
+        "en": "The strict criterion is more conservative and drops series that "
+              "are in fact significant. The other one lets them in.",
+    },
+    "boton_proyectar": {"es": "Proyectar {target}", "pt": "Projetar {target}", "en": "Project {target}"},
+    "boton_estimar": {"es": "Estimar {target}", "pt": "Estimar {target}", "en": "Estimate {target}"},
+    "recargar_datos": {"es": "Recargar datos", "pt": "Recarregar dados", "en": "Reload data"},
+    "help_recargar": {
+        "es": "Vuelve a descargar todo desde CEIC, ignorando el caché.",
+        "pt": "Baixa tudo novamente da CEIC, ignorando o cache.",
+        "en": "Downloads everything from CEIC again, ignoring the cache.",
+    },
+    "presiona_proyectar": {
+        "es": "Presiona **{boton}** para ver los resultados.",
+        "pt": "Clique em **{boton}** para ver os resultados.",
+        "en": "Click **{boton}** to see the results.",
+    },
+    "error_proyeccion": {
+        "es": "No se pudo generar la proyección: {error}",
+        "pt": "Não foi possível gerar a projeção: {error}",
+        "en": "The projection could not be generated: {error}",
+    },
+
+    "que_es_esto": {
+        "es": "¿Qué es esto?",
+        "pt": "O que é isto?",
+        "en": "What is this?",
+    },
+    "texto_que_es_esto": {
+        "es": "Este tablero es un caso de uso de la API de ISI | CEIC, no un "
+              "producto de research. Todas las series se extraen en vivo desde "
+              "la API y alimentan modelos de proyección construidos con las "
+              "variables que definió el equipo de research.\n\n"
+              "Lo que se demuestra es la infraestructura: un cliente puede "
+              "montar tableros como este —para su materia prima, su indicador "
+              "macro o su variable interna— con datos de CEIC y ver todo el "
+              "análisis del modelo. Los modelos que se muestran son un ejemplo "
+              "de lo que se puede construir, no la mejor especificación "
+              "posible de cada indicador.",
+        "pt": "Este painel é um caso de uso da API da ISI | CEIC, não um produto "
+              "de research. Todas as séries são extraídas ao vivo da API e "
+              "alimentam modelos de projeção construídos com as variáveis "
+              "definidas pelo time de research.\n\n"
+              "O que se demonstra é a infraestrutura: um cliente pode montar "
+              "painéis como este —para sua matéria-prima, seu indicador macro "
+              "ou sua variável interna— com dados da CEIC e ver toda a análise "
+              "do modelo. Os modelos mostrados são um exemplo do que dá para "
+              "construir, não a melhor especificação possível de cada indicador.",
+        "en": "This dashboard is a use case for the ISI | CEIC API, not a "
+              "research product. Every series is pulled live from the API and "
+              "feeds projection models built with the variables defined by the "
+              "research team.\n\n"
+              "What it demonstrates is the infrastructure: a client can build "
+              "dashboards like this one —for their commodity, their macro "
+              "indicator or their own internal variable— with CEIC data and see "
+              "the full model analysis. The models shown are an example of what "
+              "can be built, not the best possible specification for each "
+              "indicator.",
+    },
+    # ---------- Cuadro de pasos ----------
+    "pasos_proyeccion": {
+        "es": "Pasos de la proyección — {target}",
+        "pt": "Etapas da projeção — {target}",
+        "en": "Projection steps — {target}",
+    },
+    "proyeccion_lista": {
+        "es": "{target}: proyección lista.", "pt": "{target}: projeção pronta.",
+        "en": "{target}: projection ready.",
+    },
+
+    # ---------- Detalle estadístico ----------
+    "significancia_titulo": {
+        "es": "**Significancia estadística ({h} adelante)** — qué variables "
+              "mueven de verdad al indicador y cuáles no:",
+        "pt": "**Significância estatística ({h} à frente)** — quais variáveis "
+              "realmente movem o indicador e quais não:",
+        "en": "**Statistical significance ({h} ahead)** — which variables "
+              "actually move the indicator and which don't:",
+    },
+    "eleccion_indicador": {
+        "es": "**Elección del indicador principal.** Se probaron {n} candidatos:",
+        "pt": "**Escolha do indicador principal.** Foram testados {n} candidatos:",
+        "en": "**Choosing the main indicator.** {n} candidates were tested:",
+    },
+    "col_indicador": {"es": "Indicador", "pt": "Indicador", "en": "Indicator"},
+    "col_estado": {"es": "Estado", "pt": "Status", "en": "Status"},
+    "col_r2_ajustado": {"es": "R² ajustado", "pt": "R² ajustado", "en": "Adjusted R²"},
+    "col_observaciones": {"es": "Observaciones", "pt": "Observações", "en": "Observations"},
+    "col_errores_estandar": {"es": "Errores estándar", "pt": "Erros padrão", "en": "Standard errors"},
+    "col_variable": {"es": "Variable", "pt": "Variável", "en": "Variable"},
+    "col_colinealidad": {"es": "Colinealidad", "pt": "Colinearidade", "en": "Collinearity"},
+    "col_serie": {"es": "Serie", "pt": "Série", "en": "Series"},
+    "col_bloque": {"es": "Bloque", "pt": "Bloco", "en": "Block"},
+    "col_p_value": {"es": "p-value", "pt": "p-valor", "en": "p-value"},
+    "col_mejora_error": {
+        "es": "Mejora del error (%)", "pt": "Melhoria do erro (%)",
+        "en": "Error improvement (%)",
+    },
+    "col_significativa": {"es": "Significativa", "pt": "Significativa", "en": "Significant"},
+    "col_mejora_backtest": {
+        "es": "Mejora el backtest", "pt": "Melhora o backtest", "en": "Improves the backtest",
+    },
+    "col_entra_modelo": {"es": "Entra al modelo", "pt": "Entra no modelo", "en": "Enters the model"},
+    "col_significativo_95": {"es": "Significativo (95%)", "pt": "Significativo (95%)",
+                              "en": "Significant (95%)"},
+    "capacidad_explicativa": {
+        "es": "**Capacidad explicativa por horizonte:**",
+        "pt": "**Capacidade explicativa por horizonte:**",
+        "en": "**Explanatory power by horizon:**",
+    },
+    "dataset_completo": {
+        "es": "**Dataset completo usado para el modelo:**",
+        "pt": "**Dataset completo usado no modelo:**",
+        "en": "**Full dataset used by the model:**",
+    },
+    "descargar_dataset": {
+        "es": "Descargar dataset (CSV)", "pt": "Baixar dataset (CSV)",
+        "en": "Download dataset (CSV)",
+    },
+    "descargar_series": {
+        "es": "Descargar todas las series descargadas (CSV)",
+        "pt": "Baixar todas as séries baixadas (CSV)",
+        "en": "Download all extracted series (CSV)",
+    },
+    "descargar_backtest": {
+        "es": "Descargar backtest (CSV)", "pt": "Baixar backtest (CSV)",
+        "en": "Download backtest (CSV)",
+    },
+    "caption_hac": {
+        "es": "A horizontes largos las ventanas de proyección se solapan, así que "
+              "los errores estándar usan la corrección de Newey-West.",
+        "pt": "Em horizontes longos as janelas de projeção se sobrepõem, então "
+              "os erros padrão usam a correção de Newey-West.",
+        "en": "At long horizons the projection windows overlap, so standard "
+              "errors use the Newey-West correction.",
+    },
+
+    # ---------- Tamizaje / diagnóstico ----------
+    "series_adicionales_titulo": {
+        "es": "**Series adicionales evaluadas.** {total} combinaciones de serie y "
+              "horizonte; entraron al modelo {pasaron}.",
+        "pt": "**Séries adicionais avaliadas.** {total} combinações de série e "
+              "horizonte; entraram no modelo {pasaron}.",
+        "en": "**Additional series evaluated.** {total} series-horizon "
+              "combinations; {pasaron} entered the model.",
+    },
+    "ninguna_paso": {
+        "es": "Ninguna serie adicional superó el criterio, así que el modelo se "
+              "queda con {indicador} como único predictor.",
+        "pt": "Nenhuma série adicional passou no critério, então o modelo fica "
+              "com {indicador} como único preditor.",
+        "en": "No additional series met the criterion, so the model keeps "
+              "{indicador} as its only predictor.",
+    },
+    "aporte_individual": {
+        "es": "**Aporte de cada serie.** Todas las series definidas por el equipo "
+              "de research entran al modelo; esta tabla muestra cuánto agrega "
+              "cada una por encima de mirar solo el propio indicador.",
+        "pt": "**Contribuição de cada série.** Todas as séries definidas pelo time "
+              "de research entram no modelo; esta tabela mostra quanto cada uma "
+              "acrescenta além de olhar só o próprio indicador.",
+        "en": "**Contribution of each series.** Every series defined by the "
+              "research team enters the model; this table shows how much each "
+              "one adds beyond looking at the indicator alone.",
+    },
+    "predictores_usados": {
+        "es": "**Predictores del modelo:** {lista}",
+        "pt": "**Preditores do modelo:** {lista}",
+        "en": "**Model predictors:** {lista}",
+    },
+    "descartadas_colinealidad": {
+        "es": "Se retiraron por duplicar la información de otra serie: {lista}.",
+        "pt": "Foram retiradas por duplicar a informação de outra série: {lista}.",
+        "en": "Removed for duplicating another series' information: {lista}.",
+    },
+    "series_sin_datos": {
+        "es": "Sin datos utilizables en el período: {lista}.",
+        "pt": "Sem dados utilizáveis no período: {lista}.",
+        "en": "No usable data in the period: {lista}.",
+    },
+
+    # ---------- Leyendas de los gráficos ----------
+    "leyenda_proyeccion": {"es": "Proyección", "pt": "Projeção", "en": "Projection"},
+    "leyenda_rango": {
+        "es": "Rango de confianza (95%)", "pt": "Intervalo de confiança (95%)",
+        "en": "Confidence range (95%)",
+    },
+    "leyenda_real": {"es": "Real", "pt": "Real", "en": "Actual"},
+    "leyenda_modelo": {
+        "es": "Proyección del modelo", "pt": "Projeção do modelo", "en": "Model projection",
+    },
+    "leyenda_dato_oficial": {
+        "es": "Dato oficial", "pt": "Dado oficial", "en": "Official figure",
+    },
+    "leyenda_estimado": {
+        "es": "Estimado por el modelo", "pt": "Estimado pelo modelo",
+        "en": "Estimated by the model",
+    },
+
+    # ---------- Unidades de los ejes ----------
+    "eje_crecimiento_interanual": {
+        "es": "Crecimiento interanual (%)", "pt": "Crescimento interanual (%)",
+        "en": "Year-over-year growth (%)",
+    },
+    "eje_variacion_interanual": {
+        "es": "Variación interanual (%)", "pt": "Variação interanual (%)",
+        "en": "Year-over-year change (%)",
+    },
+    "eje_variacion_precio": {
+        "es": "Variación % del precio", "pt": "Variação % do preço",
+        "en": "Price change (%)",
+    },
+
+    # ---------- Nowcast: detalle ----------
+    "precision_significancia": {
+        "es": "**Precisión y significancia por corte:**",
+        "pt": "**Precisão e significância por corte:**",
+        "en": "**Accuracy and significance by cut-off:**",
+    },
+    "advertencias_nowcast": {
+        "es": "El R² se calcula sobre todo el período, incluido 2020, así que sale "
+              "inflado: el número que vale es el error del backtest. Además, la "
+              "validación usa la serie de PIB ya revisada, no la primera "
+              "estimación — es la práctica estándar, pero la operación real "
+              "sería algo menos precisa.",
+        "pt": "O R² é calculado sobre todo o período, incluindo 2020, então sai "
+              "inflado: o número que vale é o erro do backtest. Além disso, a "
+              "validação usa a série de PIB já revisada, não a primeira "
+              "estimativa — é a prática padrão, mas a operação real seria um "
+              "pouco menos precisa.",
+        "en": "The R² is computed over the whole period, 2020 included, so it "
+              "comes out inflated: the number that matters is the backtest "
+              "error. The validation also uses the already-revised GDP series, "
+              "not the first estimate — standard practice, but real-time "
+              "operation would be somewhat less accurate.",
+    },
+    "resultados_backtest": {
+        "es": "**Resultados completos del backtest:**",
+        "pt": "**Resultados completos do backtest:**",
+        "en": "**Full backtest results:**",
+    },
+    "modelo_conjunto_significativo": {
+        "es": "**El modelo en conjunto sí es significativo** (p del test F = {p}), "
+              "aunque las variables por separado no lo sean: es lo que pasa "
+              "cuando dos predictores dicen casi lo mismo.",
+        "pt": "**O modelo em conjunto é significativo** (p do teste F = {p}), "
+              "mesmo que as variáveis isoladas não sejam: é o que acontece "
+              "quando dois preditores dizem quase a mesma coisa.",
+        "en": "**The model as a whole is significant** (F-test p = {p}), even "
+              "if the individual variables aren't: that's what happens when "
+              "two predictors say almost the same thing.",
+    },
+    "caption_colinealidad_severa": {
+        "es": "Colinealidad severa (VIF > 10) en: {lista}. La proyección en "
+              "conjunto sigue siendo válida, pero no se puede afirmar cuál de "
+              "esas variables manda.",
+        "pt": "Colinearidade severa (VIF > 10) em: {lista}. A projeção em "
+              "conjunto continua válida, mas não dá para afirmar qual dessas "
+              "variáveis manda.",
+        "en": "Severe collinearity (VIF > 10) in: {lista}. The combined "
+              "projection is still valid, but it can't be said which of those "
+              "variables drives it.",
+    },
+    "caption_limite_series": {
+        "es": "Se limita a 3 series adicionales por horizonte: con ~80 "
+              "observaciones, más predictores producen un modelo que memoriza "
+              "el pasado en vez de anticipar el futuro.",
+        "pt": "Limita-se a 3 séries adicionais por horizonte: com ~80 "
+              "observações, mais preditores produzem um modelo que memoriza o "
+              "passado em vez de antecipar o futuro.",
+        "en": "Capped at 3 additional series per horizon: with ~80 "
+              "observations, more predictors produce a model that memorizes "
+              "the past instead of anticipating the future.",
+    },
+})
+
+
+# ======================================================================
+# Nombres de series e indicadores
+# ----------------------------------------------------------------------
+# El catálogo guarda un solo nombre por serie (en español) porque es la
+# clave con la que trabaja el equipo. Traducirlo en el catálogo obligaría
+# a escribir tres nombres en cada entrada y a repetirlos en las que se
+# comparten (el Brent aparece en tres modelos). Este diccionario traduce
+# por NOMBRE, así una serie nueva que reutilice un nombre ya conocido
+# queda traducida sin tocar nada.
+#
+# Una serie que no esté acá se muestra tal cual — se ve, no rompe.
+# ======================================================================
+SERIES_LABELS = {
+    # --- objetivos ---
+    "PIB de Colombia": {"pt": "PIB da Colômbia", "en": "Colombia GDP"},
+    "PIB de Colombia — trimestre en curso": {
+        "pt": "PIB da Colômbia — trimestre em curso",
+        "en": "Colombia GDP — current quarter",
+    },
+    "PIB de Colombia — proyección a futuro": {
+        "pt": "PIB da Colômbia — projeção futura",
+        "en": "Colombia GDP — forward projection",
+    },
+    "PIB de Brasil": {"pt": "PIB do Brasil", "en": "Brazil GDP"},
+    "PIB de Brasil a/a": {"pt": "PIB do Brasil a/a", "en": "Brazil GDP YoY"},
+    "Inflación de Colombia": {"pt": "Inflação da Colômbia", "en": "Colombia inflation"},
+    "Inflación de Brasil": {"pt": "Inflação do Brasil", "en": "Brazil inflation"},
+    "Ventas de vehículos en Colombia": {
+        "pt": "Vendas de veículos na Colômbia", "en": "Colombia vehicle sales",
+    },
+    "Exportaciones de Colombia": {
+        "pt": "Exportações da Colômbia", "en": "Colombia exports",
+    },
+    "Exportaciones de Brasil": {"pt": "Exportações do Brasil", "en": "Brazil exports"},
+    "Precio del acero en China": {
+        "pt": "Preço do aço na China", "en": "Steel price in China",
+    },
+
+    # --- series ---
+    "Índice de Seguimiento a la Economía (ISE)": {
+        "pt": "Índice de Acompanhamento da Economia (ISE)",
+        "en": "Economic Activity Index (ISE)",
+    },
+    "Índice de actividad económica": {
+        "pt": "Índice de atividade econômica", "en": "Economic activity index",
+    },
+    "Producción Industrial": {"pt": "Produção industrial", "en": "Industrial production"},
+    "Producción industrial": {"pt": "Produção industrial", "en": "Industrial production"},
+    "Comercio al por Menor": {"pt": "Comércio varejista", "en": "Retail trade"},
+    "Ventas retail": {"pt": "Vendas no varejo", "en": "Retail sales"},
+    "Ventas industriales": {"pt": "Vendas industriais", "en": "Industrial sales"},
+    "Consumo de electricidad": {
+        "pt": "Consumo de eletricidade", "en": "Electricity consumption",
+    },
+    "Exportaciones": {"pt": "Exportações", "en": "Exports"},
+    "Exportaciones totales": {"pt": "Exportações totais", "en": "Total exports"},
+    "Inflación a/a": {"pt": "Inflação a/a", "en": "Inflation YoY"},
+    "Índice de precios al productor": {
+        "pt": "Índice de preços ao produtor", "en": "Producer price index",
+    },
+    "Tasa de cambio TRM": {"pt": "Taxa de câmbio", "en": "Exchange rate"},
+    "Tasa de cambio": {"pt": "Taxa de câmbio", "en": "Exchange rate"},
+    "Tasa de cambio real": {"pt": "Taxa de câmbio real", "en": "Real exchange rate"},
+    "Precio de la gasolina": {"pt": "Preço da gasolina", "en": "Gasoline price"},
+    "Precio de la electricidad": {"pt": "Preço da eletricidade", "en": "Electricity price"},
+    "Expectativas de inflación": {
+        "pt": "Expectativas de inflação", "en": "Inflation expectations",
+    },
+    "Índice de confianza del consumidor": {
+        "pt": "Índice de confiança do consumidor", "en": "Consumer confidence index",
+    },
+    "Confianza del consumidor": {
+        "pt": "Confiança do consumidor", "en": "Consumer confidence",
+    },
+    "Confianza del consumidor EEUU": {
+        "pt": "Confiança do consumidor EUA", "en": "US consumer confidence",
+    },
+    "Confianza del consumidor China": {
+        "pt": "Confiança do consumidor China", "en": "China consumer confidence",
+    },
+    "Ventas retail China": {"pt": "Vendas no varejo China", "en": "China retail sales"},
+    "Producción industrial EEUU": {
+        "pt": "Produção industrial EUA", "en": "US industrial production",
+    },
+    "Cartera de crédito al consumidor": {
+        "pt": "Carteira de crédito ao consumidor", "en": "Consumer credit portfolio",
+    },
+    "Tasa de interés": {"pt": "Taxa de juros", "en": "Interest rate"},
+    "Ventas de vehículos": {"pt": "Vendas de veículos", "en": "Vehicle sales"},
+    "Producción de petróleo": {"pt": "Produção de petróleo", "en": "Oil production"},
+    "Producción de soya": {"pt": "Produção de soja", "en": "Soybean production"},
+    "Precio del Brent": {"pt": "Preço do Brent", "en": "Brent price"},
+    "Precio del carbón": {"pt": "Preço do carvão", "en": "Coal price"},
+    "Precio del café": {"pt": "Preço do café", "en": "Coffee price"},
+    "Precio del acero (rebar, futuro 1er mes, SHFE)": {
+        "pt": "Preço do aço (vergalhão, futuro 1º mês, SHFE)",
+        "en": "Steel price (rebar, front-month future, SHFE)",
+    },
+    "Precio del carbón de coque (Tangshan)": {
+        "pt": "Preço do carvão de coque (Tangshan)", "en": "Coking coal price (Tangshan)",
+    },
+    "Inventario de mineral de hierro en puerto": {
+        "pt": "Estoque de minério de ferro em porto", "en": "Port iron ore inventory",
+    },
+    "Inventario de productos de acero (empresas grandes y medianas)": {
+        "pt": "Estoque de produtos de aço (empresas grandes e médias)",
+        "en": "Steel product inventory (large and medium enterprises)",
+    },
+    "Tasa de operación de altos hornos": {
+        "pt": "Taxa de operação de altos-fornos", "en": "Blast furnace operating rate",
+    },
+    "Producción diaria de acero crudo (empresas grandes y medianas)": {
+        "pt": "Produção diária de aço bruto (empresas grandes e médias)",
+        "en": "Daily crude steel output (large and medium enterprises)",
+    },
+
+    # --- sufijos y términos que aparecen pegados a un nombre de serie ---
+    "objetivo": {"pt": "objetivo", "en": "target"},
+    "indicador principal": {"pt": "indicador principal", "en": "main indicator"},
+    "Constante": {"pt": "Constante", "en": "Constant"},
+}
+
+# Sufijos entre paréntesis que el pipeline le pega al nombre de la serie
+# ("Inflación a/a (objetivo)"). Se traducen aparte para no tener que
+# duplicar cada nombre con y sin sufijo.
+_SUFIJOS = ["objetivo", "indicador principal"]
+
+
+def tl(label):
+    """
+    Traduce el NOMBRE de una serie, indicador o entrada del catálogo al
+    idioma activo. Si no está en SERIES_LABELS devuelve el original.
+
+    Maneja los sufijos que agrega el pipeline: "Inflación a/a (objetivo)"
+    se traduce como nombre + sufijo, sin necesidad de una entrada propia.
+
+    También traduce las frases del tipo "X del período actual", que salen
+    de las etiquetas del modelo.
+    """
+    if not label:
+        return label
+    idioma = st.session_state.get("idioma", IDIOMA_DEFAULT)
+    if idioma == IDIOMA_DEFAULT:
+        return label
+
+    texto = str(label).strip()
+
+    for sufijo in _SUFIJOS:
+        marca = f" ({sufijo})"
+        if texto.endswith(marca):
+            base = tl(texto[: -len(marca)])
+            traducido = SERIES_LABELS.get(sufijo, {}).get(idioma, sufijo)
+            return f"{base} ({traducido})"
+
+    for cola, clave in ((" del período actual", "periodo_actual"),
+                        (" del trimestre actual", "periodo_actual")):
+        if texto.endswith(cola):
+            base = tl(texto[: -len(cola)])
+            plantilla = {"pt": "{} do período atual", "en": "{} in the current period"}
+            return plantilla.get(idioma, "{} " + cola).format(base)
+
+    if texto.endswith(" (YoY %)"):
+        return f"{tl(texto[: -len(' (YoY %)')])} (YoY %)"
+
+    return SERIES_LABELS.get(texto, {}).get(idioma, texto)
+
+
+def tl_lista(labels, sep=", "):
+    """Traduce una lista de nombres de series y la une para mostrarla."""
+    return sep.join(tl(x) for x in labels)
+
+
+def traducir_columna(serie_pandas):
+    """Aplica tl() a una columna de pandas con nombres de series."""
+    return serie_pandas.map(tl)
+
+
 def t(clave, **kwargs):
     """
     Devuelve el texto de 'clave' en el idioma activo. Si la clave no
