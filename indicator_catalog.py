@@ -165,7 +165,11 @@ TARGET_CATALOG = {
         # ------------------------------------------------------------------
         "candidate_features": [
             {"label": "Inflación a/a", "slug": "inflacion", "bloque": "Precios",
-             "series_id": "412380767", "transform": "already_yoy", "lag_meses": None},
+             # CORREGIDO (ago-2026): 412380767 es el CPI en nivel (Dec2018=100,
+             # ej. 159.79), no una tasa a/a ya calculada -- confirmado revisando
+             # la metadata real de CEIC. Con already_yoy se estaba usando el
+             # índice tal cual en vez de su variación %.
+             "series_id": "412380767", "transform": "yoy", "lag_meses": None},
             {"label": "Tasa de interés", "slug": "tasa_interes", "bloque": "Precios",
              "series_id": "114129708", "transform": "level", "lag_meses": (4, 6)},
             {"label": "Tasa de cambio TRM", "slug": "trm", "bloque": "Precios",
@@ -174,7 +178,13 @@ TARGET_CATALOG = {
              "bloque": "Demanda", "series_id": "234405303", "transform": "level",
              "lag_meses": (2, 4)},
             {"label": "Cartera de crédito al consumidor", "slug": "cartera_consumo",
-             "bloque": "Demanda", "series_id": "245597403", "transform": "already_yoy",
+             # CORREGIDO (ago-2026): 245597403 es el saldo de cartera en COP bn
+             # (nivel, ej. 223.543), no una tasa a/a ya calculada -- confirmado
+             # revisando la metadata real de CEIC. El docstring del módulo la
+             # citaba como el caso correcto de already_yoy, pero resultó ser
+             # el mismo error que las otras 3 (412380767, 366987777, 273491403):
+             # el nombre de la tabla decía "a/a" pero la serie real es un nivel.
+             "bloque": "Demanda", "series_id": "245597403", "transform": "yoy",
              "lag_meses": None},
             {"label": "Ventas de vehículos", "slug": "vehiculos", "bloque": "Demanda",
              "series_id": "449020167", "transform": "yoy", "lag_meses": None},
@@ -206,7 +216,9 @@ TARGET_CATALOG = {
         "max_horizon": 6,
         "target": {
             "label": "Inflación a/a", "slug": "inflacion",
-            "series_id": "412380767", "transform": "already_yoy",
+            # CORREGIDO (ago-2026): mismo caso que en pib_colombia -- 412380767
+            # es el CPI en nivel, no una tasa a/a ya calculada.
+            "series_id": "412380767", "transform": "yoy",
         },
         "features": [
             {"label": "Índice de precios al productor", "slug": "ipp",
@@ -247,7 +259,9 @@ TARGET_CATALOG = {
             {"label": "Tasa de cambio TRM", "slug": "trm",
              "series_id": "857382067", "transform": "yoy", "lag_meses": (4, 6)},
             {"label": "Cartera de crédito al consumidor", "slug": "cartera_consumo",
-             "series_id": "245597403", "transform": "already_yoy", "lag_meses": None},
+             # CORREGIDO (ago-2026): ver nota en pib_colombia -- 245597403 es
+             # el saldo de cartera en COP bn (nivel), no una tasa a/a.
+             "series_id": "245597403", "transform": "yoy", "lag_meses": None},
             {"label": "Tasa de interés", "slug": "tasa_interes",
              "series_id": "114129708", "transform": "level", "lag_meses": (4, 6)},
         ],
@@ -311,7 +325,10 @@ TARGET_CATALOG = {
         "max_horizon": 4,
         "target": {
             "label": "PIB de Brasil a/a", "slug": "pib_br",
-            "series_id": "366987777", "transform": "already_yoy",
+            # CORREGIDO (ago-2026): 366987777 es el PIB en nivel (BRL mn, ej.
+            # 343.338), no una tasa a/a ya calculada -- confirmado revisando
+            # la metadata real de CEIC.
+            "series_id": "366987777", "transform": "yoy",
         },
         # Seis predictores mensuales de actividad, todos contemporáneos.
         # Sobre ~80 trimestres eso ya es mucho, y varios se mueven casi
@@ -350,7 +367,10 @@ TARGET_CATALOG = {
         "max_horizon": 6,
         "target": {
             "label": "Inflación a/a", "slug": "inflacion_br",
-            "series_id": "273491403", "transform": "already_yoy",
+            # CORREGIDO (ago-2026): 273491403 es el IPCA en nivel (Dec1993=100,
+            # ej. 7657.73), no una tasa a/a ya calculada -- confirmado
+            # revisando la metadata real de CEIC.
+            "series_id": "273491403", "transform": "yoy",
         },
         "features": [
             {"label": "Índice de precios al productor", "slug": "ipp_br",

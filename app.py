@@ -316,7 +316,9 @@ def initialize_session_state():
 
 
 def login_page():
-    top_left, top_right = st.columns([5, 1])
+    # Ensanchado de [5, 1] a [4, 2]: un solo botón cabía angosto, pero
+    # ahora van 3 (ES/PT/EN) y necesitan más espacio para no verse apretados.
+    top_left, top_right = st.columns([4, 2])
     with top_right:
         selector_idioma(key_sufijo="login")
 
@@ -583,28 +585,35 @@ def render_macro_result(result, target_config):
 
     # ------------------------------------------------------------------
     st.markdown("---")
-    bench_txt = etiqueta_benchmark(bt["benchmark"].iloc[0], period_label)
     st.markdown(t("que_tan_bien_predice"))
-    st.caption(
-        t("caption_reentrena_periodo", periodo=etiqueta_periodo(period_label), rival=bench_txt)
-    )
+    if bt.empty:
+        # El dataset no alcanzó min_train_obs + h en NINGÚN horizonte (ver
+        # multi_horizon_forecast.backtest): antes esto tumbaba la app con
+        # un KeyError al leer bt["benchmark"] sobre un DataFrame sin
+        # columnas. Ahora se avisa en vez de crashear.
+        st.warning(t("warning_backtest_insuficiente", n=len(dataset)))
+    else:
+        bench_txt = etiqueta_benchmark(bt["benchmark"].iloc[0], period_label)
+        st.caption(
+            t("caption_reentrena_periodo", periodo=etiqueta_periodo(period_label), rival=bench_txt)
+        )
 
-    tabla_bt = bt.copy()
-    tabla_bt["horizonte"] = tabla_bt["horizon"].apply(
-        lambda h: etiqueta_horizonte(int(h), period_label)
-    )
-    tabla_bt[t("le_gana")] = tabla_bt["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
-    st.dataframe(
-        tabla_bt[["horizonte", "n_folds", "rmse_model", "rmse_benchmark",
-                  "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
-            "horizonte": t("col_horizonte"),
-            "n_folds": t("col_periodos_probados", periodo=etiqueta_periodo(period_label, plural=True, capitalizar=True)),
-            "rmse_model": t("col_error_modelo_rmse"),
-            "rmse_benchmark": t("col_error_de", rival=bench_txt),
-            "mejora_vs_benchmark_%": t("col_mejora_pct"),
-        }),
-        use_container_width=True, hide_index=True,
-    )
+        tabla_bt = bt.copy()
+        tabla_bt["horizonte"] = tabla_bt["horizon"].apply(
+            lambda h: etiqueta_horizonte(int(h), period_label)
+        )
+        tabla_bt[t("le_gana")] = tabla_bt["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
+        st.dataframe(
+            tabla_bt[["horizonte", "n_folds", "rmse_model", "rmse_benchmark",
+                      "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
+                "horizonte": t("col_horizonte"),
+                "n_folds": t("col_periodos_probados", periodo=etiqueta_periodo(period_label, plural=True, capitalizar=True)),
+                "rmse_model": t("col_error_modelo_rmse"),
+                "rmse_benchmark": t("col_error_de", rival=bench_txt),
+                "mejora_vs_benchmark_%": t("col_mejora_pct"),
+            }),
+            use_container_width=True, hide_index=True,
+        )
 
     horizontes = sorted(result["backtest_detail"].keys())
     if horizontes:
@@ -628,9 +637,12 @@ def render_macro_result(result, target_config):
         st.caption(t("caption_comportamiento_proximo", target=tl(target_label).lower(),
                      periodo=etiqueta_periodo(period_label)))
     with e2:
-        mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
-        render_metric_card(t("mejora_vs_no_usar"), f"{mejor['mejora_vs_benchmark_%']:.0f}%")
-        st.caption(t("caption_en_horizonte", h=etiqueta_horizonte(int(mejor['horizon']), period_label)))
+        if not bt.empty:
+            mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
+            render_metric_card(t("mejora_vs_no_usar"), f"{mejor['mejora_vs_benchmark_%']:.0f}%")
+            st.caption(t("caption_en_horizonte", h=etiqueta_horizonte(int(mejor['horizon']), period_label)))
+        else:
+            render_metric_card(t("mejora_vs_no_usar"), "—")
     with e3:
         render_metric_card(
             t("periodos_de_historia", periodo=etiqueta_periodo(period_label, plural=True, capitalizar=True)),
@@ -864,29 +876,32 @@ def render_commodity_result(result, target_config):
     st.markdown(t("que_tan_bien_predice"))
     st.caption(t("caption_reentrena_semana"))
 
-    if not bt["le_gana_al_benchmark"].any():
-        st.warning(t("warning_no_gana_random_walk"))
-    elif not bt["le_gana_al_benchmark"].all():
-        gana = bt[bt["le_gana_al_benchmark"]]["horizon"].apply(
-            lambda h: etiqueta_horizonte(int(h), period_label)
-        ).tolist()
-        st.info(t("info_gana_solo_en", horizontes=", ".join(gana)))
+    if bt.empty:
+        st.warning(t("warning_backtest_insuficiente", n=len(result["dataset"])))
+    else:
+        if not bt["le_gana_al_benchmark"].any():
+            st.warning(t("warning_no_gana_random_walk"))
+        elif not bt["le_gana_al_benchmark"].all():
+            gana = bt[bt["le_gana_al_benchmark"]]["horizon"].apply(
+                lambda h: etiqueta_horizonte(int(h), period_label)
+            ).tolist()
+            st.info(t("info_gana_solo_en", horizontes=", ".join(gana)))
 
-    bt_display = bt.copy()
-    bt_display[t("col_horizonte")] = bt_display["horizon"].apply(
-        lambda h: etiqueta_horizonte(int(h), period_label)
-    )
-    bt_display[t("le_gana")] = bt_display["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
-    st.dataframe(
-        bt_display[[t("col_horizonte"), "n_folds", "rmse_model", "rmse_naive_zero",
-                    "rmse_naive_persist", "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
-            "n_folds": t("col_semanas_probadas"), "rmse_model": t("col_error_modelo_rmse"),
-            "rmse_naive_zero": t("col_error_si_no_cambia"),
-            "rmse_naive_persist": t("col_error_si_repite"),
-            "mejora_vs_benchmark_%": t("col_mejora_vs_no_cambio"),
-        }),
-        use_container_width=True, hide_index=True,
-    )
+        bt_display = bt.copy()
+        bt_display[t("col_horizonte")] = bt_display["horizon"].apply(
+            lambda h: etiqueta_horizonte(int(h), period_label)
+        )
+        bt_display[t("le_gana")] = bt_display["le_gana_al_benchmark"].map({True: t("si"), False: t("no")})
+        st.dataframe(
+            bt_display[[t("col_horizonte"), "n_folds", "rmse_model", "rmse_naive_zero",
+                        "rmse_naive_persist", "mejora_vs_benchmark_%", t("le_gana")]].rename(columns={
+                "n_folds": t("col_semanas_probadas"), "rmse_model": t("col_error_modelo_rmse"),
+                "rmse_naive_zero": t("col_error_si_no_cambia"),
+                "rmse_naive_persist": t("col_error_si_repite"),
+                "mejora_vs_benchmark_%": t("col_mejora_vs_no_cambio"),
+            }),
+            use_container_width=True, hide_index=True,
+        )
 
     horizontes = sorted(result["backtest_detail"].keys())
     if horizontes:
@@ -913,15 +928,20 @@ def render_commodity_result(result, target_config):
     # el mejor modelo del acero". Las métricas pasan a texto pequeño
     # debajo del backtest; el número sigue estando, y sigue siendo el
     # mismo.
-    mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
+    mejor_txt = ""
+    if not bt.empty:
+        mejor = bt.sort_values("mejora_vs_benchmark_%", ascending=False).iloc[0]
+        h_mejor = etiqueta_horizonte(int(mejor["horizon"]), period_label)
+        mejor_txt = (
+            f"&nbsp;·&nbsp; {t('mejor_mejora_vs_no_cambio')}: "
+            f"{mejor['mejora_vs_benchmark_%']:.0f}% ({h_mejor}) "
+        )
     r2 = result["forecast_path"].iloc[0]["r_squared_adj"]
     h_r2 = etiqueta_horizonte(int(result["forecast_path"].iloc[0]["horizon"]), period_label)
     anio_inicio = f"{pd.to_datetime(result['dataset']['date']).min():%Y}"
-    h_mejor = etiqueta_horizonte(int(mejor["horizon"]), period_label)
     st.caption(
         f"{t('qué_tanto_explica')}: {r2:.1%} ({h_r2}) &nbsp;·&nbsp; "
-        f"{t('mejor_mejora_vs_no_cambio')}: {mejor['mejora_vs_benchmark_%']:.0f}% "
-        f"({h_mejor}) &nbsp;·&nbsp; "
+        f"{mejor_txt}"
         f"{t('semanas_de_historia')}: {len(result['dataset'])} "
         f"({t('caption_desde_anio', anio=anio_inicio)})",
         unsafe_allow_html=True,
@@ -958,7 +978,9 @@ def render_commodity_result(result, target_config):
 
 # ======================================================================
 def main_app():
-    top_left, top_mid, top_right = st.columns([4, 1, 1.5])
+    # top_mid ensanchado de 1 a 1.8 (mismo motivo que en login_page: ahora
+    # son 3 botones ES/PT/EN, no uno solo).
+    top_left, top_mid, top_right = st.columns([4, 1.8, 1.5])
     with top_left:
         st.markdown(render_badge("ISI | CEIC API"), unsafe_allow_html=True)
     with top_mid:

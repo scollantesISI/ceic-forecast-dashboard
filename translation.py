@@ -236,6 +236,23 @@ TEXTS = {
               "points show how uncertainty grows, but shouldn't be "
               "presented as a forecast.",
     },
+    "warning_backtest_insuficiente": {
+        "es": "No hay suficiente historia para validar el modelo contra datos "
+              "reales en ningún horizonte (el dataset tiene {n} observaciones). "
+              "El número de arriba sigue siendo el ajuste del modelo, pero sin "
+              "un backtest detrás — conviene no presentarlo como algo "
+              "validado hasta que haya más historia disponible.",
+        "pt": "Não há histórico suficiente para validar o modelo contra dados "
+              "reais em nenhum horizonte (o dataset tem {n} observações). O "
+              "número acima ainda é o ajuste do modelo, mas sem um backtest "
+              "por trás — melhor não apresentá-lo como algo validado até "
+              "haver mais histórico disponível.",
+        "en": "There isn't enough history to validate the model against real "
+              "data at any horizon (the dataset has {n} observations). The "
+              "number above is still the model's fit, but without a backtest "
+              "behind it — better not to present it as validated until more "
+              "history is available.",
+    },
     "caption_reentrena_periodo": {
         "es": "En cada {periodo} histórico se reentrena el modelo usando solo "
               "resultados que ya se conocían en ese momento, y se proyecta "
@@ -920,17 +937,33 @@ def t(clave, **kwargs):
 
 def selector_idioma(key_sufijo=""):
     """
-    Botón que avanza al SIGUIENTE idioma, en el orden de IDIOMAS_DISPONIBLES
-    (es -> pt -> en -> es -> ...). Con 2 idiomas esto era lo mismo que
-    "el botón muestra el otro idioma"; con 3 o más, "cualquier otro
-    idioma" ya no alcanza — hace falta un orden fijo para que el botón
-    sea predecible. key_sufijo evita choques de key cuando se llama más
-    de una vez en la misma pantalla (ej. login y encabezado principal).
+    Tres botones chicos (ES / PT / EN) para elegir el idioma directo, en
+    vez del botón que avanzaba al siguiente en el orden es->pt->en->es
+    (con 3 idiomas eso podía pedir hasta 2 clics para llegar al que se
+    quería). El botón del idioma activo sale resaltado (type="primary",
+    el naranja de marca de theme.py) y deshabilitado -- no hace nada
+    clickearlo, así que ni se registra el click.
+
+    Sigue funcionando para cualquier cantidad de idiomas sin tocar el
+    código (recorre IDIOMAS_DISPONIBLES), por si se agrega un cuarto más
+    adelante -- eso sí, con 4+ botones angostos conviene revisar que la
+    columna donde se llama tenga espacio suficiente.
+
+    key_sufijo evita choques de key cuando se llama más de una vez en la
+    misma pantalla (ej. login y encabezado principal).
     """
-    idiomas = list(IDIOMAS_DISPONIBLES.keys())
     actual = st.session_state.get("idioma", IDIOMA_DEFAULT)
-    idx_actual = idiomas.index(actual) if actual in idiomas else 0
-    siguiente = idiomas[(idx_actual + 1) % len(idiomas)]
-    if st.button(IDIOMAS_DISPONIBLES[siguiente], key=f"idioma_btn_{key_sufijo}"):
-        st.session_state.idioma = siguiente
-        st.rerun()
+    cols = st.columns(len(IDIOMAS_DISPONIBLES))
+    for col, codigo in zip(cols, IDIOMAS_DISPONIBLES):
+        with col:
+            es_actual = codigo == actual
+            clicked = st.button(
+                codigo.upper(),
+                key=f"idioma_btn_{codigo}_{key_sufijo}",
+                type="primary" if es_actual else "secondary",
+                disabled=es_actual,
+                use_container_width=True,
+            )
+            if clicked:
+                st.session_state.idioma = codigo
+                st.rerun()
